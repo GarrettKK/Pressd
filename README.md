@@ -23,6 +23,7 @@ Discogs allows 60 searches a minute per account, so a library of ~3000 albums ta
 - Tracks are grouped into albums by artist and album name (after stripping things like `(feat. …)`, `- Single`, `- Remastered`).
 - One Discogs search per album with `format=Vinyl`. If nothing comes back, a second search uses the first track title.
 - A result counts only when the artist part of the Discogs title matches the artist in the library. Among matching results the one whose title equals the album name wins; a match found through a track search, or without an exact title match, is labelled *please verify*.
+- Discogs throttles by source IP (60 requests a minute). Requests from Cloudflare leave from shared addresses, so when logged in the Functions only *sign* each search and the browser sends it to Discogs from the user's own address. OAuth parameters go in the query string first, then in an Authorization header, and the server-side proxy is the last resort.
 - With the shared cache, unchecked albums are first looked up in the cache. Verdicts a logged-in user finds are written back. A *vinyl* verdict is never overwritten by a *none* one, and a *none* verdict expires after 180 days so new pressings get picked up. Manual dismissals stay local.
 - ISRC codes, when present, drive the statistics panel (release years and registrant prefixes).
 
@@ -35,7 +36,8 @@ Discogs allows 60 searches a minute per account, so a library of ~3000 albums ta
 | `importers.js` | library parsers (also usable in Node for tests) |
 | `functions/auth/*` | Discogs OAuth 1.0a login, callback, logout |
 | `functions/api/me.js` | who is logged in, which features the deployment has |
-| `functions/api/search.js` | Discogs search proxy signed with the user's OAuth token |
+| `functions/api/sign.js` | signs a Discogs search with the user's OAuth token; the browser then calls Discogs itself |
+| `functions/api/search.js` | server-side search proxy, used only when the browser cannot call Discogs directly |
 | `functions/api/cache.js` | shared verdict cache (read: anyone, write: logged-in users) |
 | `functions/lib/*` | OAuth signing, D1 access, sessions |
 | `_headers` | response headers for Cloudflare Pages |

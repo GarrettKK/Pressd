@@ -163,13 +163,36 @@
   tokenInput.value = store.get(LS.token) || store.get(OLD.token) || '';
   $('save-token').addEventListener('click', () => { store.set(LS.token, tokenInput.value.trim()); toast('Token saved'); });
 
+  // Logged-in searches: the worker signs the request, the browser sends it to Discogs itself, so the
+  // rate limit is per user (Discogs throttles by source IP). Three transports are tried in order and
+  // the first one that works is kept for the session: OAuth parameters in the query string, OAuth in
+  // an Authorization header, and finally the server-side proxy.
+  let transport = 'query';
+  async function hostedSearch(params) {
+    const qs = new URLSearchParams(params).toString();
+    const expired = () => { auth.username = null; renderAuth(); return new Error('Your Discogs login expired. Log in again to continue.'); };
+    while (transport !== 'proxy') {
+      const sr = await api('/api/sign?' + qs);
+      if (sr.status === 401) throw expired();
+      if (!sr.ok) { transport = 'proxy'; break; }
+      const s = await sr.json();
+      try {
+        const r = transport === 'query'
+          ? await fetch(s.url, { headers: { Accept: 'application/json' } })
+          : await fetch(s.plainUrl, { headers: { Accept: 'application/json', Authorization: s.header } });
+        if (r.status !== 401 && r.status !== 403) return r;
+      } catch (e) { /* blocked by CORS or network: try the next transport */ }
+      transport = transport === 'query' ? 'header' : 'proxy';
+    }
+    const r = await api('/api/search?' + qs);
+    if (r.status === 401) throw expired();
+    return r;
+  }
+
   async function discogs(params) {
     let r;
     if (auth.username) {
-      const u = new URL('/api/search', location.href);
-      for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
-      r = await api(u.toString());
-      if (r.status === 401) { auth.username = null; renderAuth(); throw new Error('Your Discogs login expired. Log in again to continue.'); }
+      r = await hostedSearch(params);
     } else {
       const token = tokenInput.value.trim();
       if (!token) throw new Error(auth.loginAvailable ? 'Log in with Discogs, or paste a personal token below.' : 'A Discogs token is needed: paste it in the field above.');

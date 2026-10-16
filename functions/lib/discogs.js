@@ -18,8 +18,9 @@ async function hmacSha1(key, text) {
   return btoa(String.fromCharCode(...new Uint8Array(sig)));
 }
 
-/** Build the OAuth Authorization header for a request. `extra` holds oauth_callback / oauth_verifier. */
-export async function oauthHeader(env, method, url, { token = '', tokenSecret = '', extra = {} } = {}) {
+/** Sign a request. Returns the oauth_* parameters including the signature; the same set is valid
+    either in an Authorization header or appended to the query string (RFC 5849 §3.5). */
+export async function signParams(env, method, url, { token = '', tokenSecret = '', extra = {} } = {}) {
   const u = new URL(url);
   const oauth = {
     oauth_consumer_key: env.DISCOGS_CONSUMER_KEY,
@@ -37,13 +38,34 @@ export async function oauthHeader(env, method, url, { token = '', tokenSecret = 
     .map((p) => p.join('=')).join('&');
   const base = [method.toUpperCase(), enc(u.origin + u.pathname), enc(norm)].join('&');
   oauth.oauth_signature = await hmacSha1(enc(env.DISCOGS_CONSUMER_SECRET) + '&' + enc(tokenSecret), base);
-  return 'OAuth ' + Object.keys(oauth).sort().map((k) => `${enc(k)}="${enc(oauth[k])}"`).join(', ');
+  return oauth;
 }
 
-/** Signed fetch against the Discogs API. */
+export const toHeader = (oauth) => 'OAuth ' + Object.keys(oauth).sort().map((k) => `${enc(k)}="${enc(oauth[k])}"`).join(', ');
+export function toQueryUrl(url, oauth) {
+  const u = new URL(url);
+  for (const k of Object.keys(oauth)) u.searchParams.set(k, oauth[k]);
+  return u.toString();
+}
+
+/** Build the OAuth Authorization header for a request. `extra` holds oauth_callback / oauth_verifier. */
+export async function oauthHeader(env, method, url, opts = {}) {
+  return toHeader(await signParams(env, method, url, opts));
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Signed fetch against the Discogs API. Discogs throttles by source IP, and requests from Cloudflare
+    leave from shared addresses, so a 429 is retried a few times with a pause. */
 export async function discogsFetch(env, method, url, opts = {}) {
-  const auth = await oauthHeader(env, method, url, opts);
-  return fetch(url, { method, headers: { Authorization: auth, 'User-Agent': UA, Accept: opts.accept || 'application/json' } });
+  let r;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt) await sleep(Math.min(6000, 1500 * attempt));
+    const auth = await oauthHeader(env, method, url, opts);
+    r = await fetch(url, { method, headers: { Authorization: auth, 'User-Agent': UA, Accept: opts.accept || 'application/json' } });
+    if (r.status !== 429) return r;
+  }
+  return r;
 }
 
 export function parseForm(text) {
