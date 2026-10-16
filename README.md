@@ -9,6 +9,8 @@ Pressd checks every album against Discogs and tells you what you could own on wa
 
 **[Open the app → spotivinyl.pages.dev](https://spotivinyl.pages.dev)**
 
+<sub>The project was renamed from SpotiVinyl to Pressd. The site still lives at the old address for now; moving it to a proper domain is the top item on the list and will happen shortly.</sub>
+
 [![License: MIT](https://img.shields.io/badge/license-MIT-2a4d8f.svg)](LICENSE)
 [![Hosted on Cloudflare Pages](https://img.shields.io/badge/hosted%20on-Cloudflare%20Pages-c81e3c.svg)](https://pages.cloudflare.com)
 [![Data provided by Discogs](https://img.shields.io/badge/data-Discogs-16181d.svg)](https://www.discogs.com/developers)
