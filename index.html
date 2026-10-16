@@ -152,6 +152,8 @@ input[type=password] { flex: 1 1 260px; font-family: var(--font-mono); font-size
 .album .match { grid-column: 2; font-size: 13px; color: var(--fg-2); overflow-wrap: anywhere; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
 .album .match a { font-weight: 500; }
 .album .match .mono { color: var(--fg-3); }
+.album .match .chip { font-family: var(--font-mono); font-size: 12px; color: var(--fg); background: var(--surface-2); border-radius: 999px; padding: 1px 8px; }
+.album .match .want.on { color: var(--good); }
 .album .side { display: grid; gap: 6px; justify-items: end; }
 .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
 .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
@@ -277,6 +279,8 @@ footer { margin-top: 40px; font-size: 13px; color: var(--fg-3); display: flex; f
         <option value="library">Library order</option>
         <option value="filtered">Only what is listed below</option>
       </select>
+      <button class="btn" id="prices" type="button">Fetch prices</button>
+      <select id="currency" aria-label="Currency"></select>
       <span class="spacer"></span>
       <button class="btn" id="export" type="button">Vinyl list</button>
       <button class="btn" id="reset" type="button">Reset results</button>
@@ -293,6 +297,7 @@ footer { margin-top: 40px; font-size: 13px; color: var(--fg-3); display: flex; f
         <option value="count">Most-liked artists first</option>
         <option value="artist">By artist</option>
         <option value="year">By pressing year</option>
+        <option value="price">Cheapest first</option>
         <option value="library">Library order</option>
       </select>
     </div>
@@ -323,7 +328,7 @@ footer { margin-top: 40px; font-size: 13px; color: var(--fg-3); display: flex; f
   </div>
 </details>
 
-<p class="hint" style="margin-top:20px">Matches are found by artist and album name, so a short or common title can occasionally pick up the wrong release. Every match links to its Discogs page; use <em>Not a match</em> to dismiss a wrong one and <em>Recheck</em> to search again.</p>
+<p class="hint" style="margin-top:20px">Matches are found by artist and album name, so a short or common title can occasionally pick up the wrong release. Every match links to its Discogs page; use <em>Not a match</em> to dismiss a wrong one and <em>Recheck</em> to search again. <em>Fetch prices</em> reads the lowest marketplace price for every match, one request per album; <em>Want</em> adds a release to your Discogs wantlist.</p>
 </div>
 
 <footer>

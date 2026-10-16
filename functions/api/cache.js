@@ -17,13 +17,23 @@ function cleanVerdict(v) {
   if (!Number.isInteger(id) || id <= 0) return null;
   const u = str(v.u, 300);
   const th = str(v.th, 300);
-  return {
+  const out = {
     s: 'vinyl', n: Math.max(0, Math.min(99999, parseInt(v.n, 10) || 0)), id,
     t: str(v.t, 300), y: str(v.y, 4).replace(/\D/g, ''), c: str(v.c, 40), f: str(v.f, 120),
     th: /^https:\/\/i\.discogs\.com\//.test(th) ? th : '',
     u: /^https:\/\/www\.discogs\.com\//.test(u) ? u : 'https://www.discogs.com/release/' + id,
-    via: str(v.via, 10), conf: v.conf === 'high' ? 'high' : 'medium'
+    via: str(v.via, 10), conf: v.conf === 'high' ? 'high' : 'medium', ty: v.ty === 'master' ? 'master' : 'release'
   };
+  // Marketplace snapshot: lowest price, currency, copies for sale, when it was read.
+  if (v.p && typeof v.p === 'object') {
+    const low = v.p.low == null ? null : Number(v.p.low);
+    const cur = str(v.p.cur, 3).toUpperCase();
+    const ts = parseInt(v.p.ts, 10);
+    if ((low === null || (Number.isFinite(low) && low >= 0 && low < 1e6)) && /^[A-Z]{3}$/.test(cur) && Number.isFinite(ts)) {
+      out.p = { low, cur, n: Math.max(0, Math.min(99999, parseInt(v.p.n, 10) || 0)), ts };
+    }
+  }
+  return out;
 }
 
 export async function onRequestPost({ request, env }) {
@@ -53,11 +63,13 @@ export async function onRequestPut({ request, env }) {
   for (const it of items) {
     if (!it || !keyOk(it.key)) continue;
     const v = cleanVerdict(it.v); if (!v) continue;
-    // A "vinyl" verdict is never overwritten by a "none" one.
+    // A "vinyl" verdict is never overwritten by a "none" one, and a verdict carrying a price
+    // snapshot is not replaced by the same release without one.
     stmts.push(env.DB.prepare(
       'INSERT INTO verdicts (key, status, data, user, updated) VALUES (?, ?, ?, ?, ?) ' +
       'ON CONFLICT(key) DO UPDATE SET status = excluded.status, data = excluded.data, user = excluded.user, updated = excluded.updated ' +
-      "WHERE NOT (verdicts.status = 'vinyl' AND excluded.status = 'none')"
+      "WHERE NOT (verdicts.status = 'vinyl' AND excluded.status = 'none') " +
+      "AND NOT (json_extract(verdicts.data, '$.p') IS NOT NULL AND json_extract(excluded.data, '$.p') IS NULL AND json_extract(verdicts.data, '$.id') = json_extract(excluded.data, '$.id'))"
     ).bind(it.key, v.s, JSON.stringify(v), s.username, now));
   }
   if (stmts.length) await env.DB.batch(stmts);

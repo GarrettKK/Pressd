@@ -6,6 +6,7 @@
   const OLD = { token: 'vinylcheck.token', results: 'vinylcheck.results.v1', library: 'vinylcheck.library' };
   const DELAY_MS = 1100;          // Discogs allows 60 authenticated requests a minute
   const PAGE = 60;
+  const CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'SEK', 'BRL', 'MXN', 'NZD', 'ZAR'];
 
   // ---------- storage ----------
   const store = {
@@ -174,6 +175,7 @@
       try { const ir = await direct(() => oauthStep({ step: 'identity', token: access, secret }), 'GET'); if (ir.ok) username = String((await ir.json()).username || ''); } catch (e) { /* the server will try */ }
       const fin = await oauthStep({ step: 'finish', token: access, secret, username });
       auth.username = fin.username; renderAuth(); toast('Logged in to Discogs');
+      wantSynced = false; syncWantlist();
     } catch (e) {
       toast(e instanceof TypeError ? 'Could not reach Discogs from this browser. Please try again.' : e.message);
     }
@@ -250,6 +252,43 @@
     return r;
   }
 
+  // --- Other Discogs calls (marketplace stats, wantlist). Logged in: signed by the server, sent by the
+  // browser; a cross-origin PUT/DELETE the browser cannot send falls back to the server. Token mode:
+  // sent directly with the personal token.
+  let tokenUser = null;
+  async function discogsCall(op, params, method) {
+    method = method || 'GET';
+    if (auth.username) {
+      const signer = async () => {
+        const r = await api('/api/sign?' + new URLSearchParams({ op, ...params }));
+        if (r.status === 401) { auth.username = null; renderAuth(); throw new Error('Your Discogs login expired. Log in again to continue.'); }
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || `Signing failed (HTTP ${r.status})`);
+        return d;
+      };
+      try { return await direct(signer, method); }
+      catch (e) { if (!(e instanceof TypeError) || method === 'GET') throw e; }
+      const r = await api('/api/want', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op, ...params }) });
+      return r;
+    }
+    const token = tokenInput.value.trim();
+    if (!token) throw new Error('A Discogs token is needed for this.');
+    let path;
+    if (op === 'stats') path = `/marketplace/stats/${params.release_id}?curr_abbr=${params.curr || 'USD'}`;
+    else {
+      if (!tokenUser) {
+        const ir = await fetch(`https://api.discogs.com/oauth/identity?token=${encodeURIComponent(token)}`, { headers: { Accept: 'application/json' } });
+        if (!ir.ok) throw new Error('Discogs did not accept the token for account access.');
+        tokenUser = (await ir.json()).username;
+      }
+      const u = encodeURIComponent(tokenUser);
+      path = op === 'wantlist' ? `/users/${u}/wants?per_page=100&page=${params.page || 1}` : `/users/${u}/wants/${params.release_id}`;
+    }
+    const u = new URL('https://api.discogs.com' + path);
+    u.searchParams.set('token', token);
+    return fetch(u.toString(), { method, headers: { Accept: 'application/json' } });
+  }
+
   async function discogs(params) {
     let r;
     if (auth.username) {
@@ -290,9 +329,10 @@
       if (t === want) s += 4; else if (want && t.includes(want)) s += 2;
       if (x.year) s += 1;
       if ((x.format || []).some((f) => /lp|album/i.test(f))) s += 1;
+      if (x.type === 'release') s += 1;   // a concrete pressing has a marketplace page and a wantlist entry
       return { x, s };
     }).sort((a, b) => b.s - a.s);
-    return { hit: scored[0].x, strong: scored[0].s >= 2 };
+    return { hit: scored[0].x, strong: scored[0].s >= 3 };
   }
 
   async function checkAlbum(a) {
@@ -311,11 +351,92 @@
     if (p) {
       const h = p.hit;
       return { s: 'vinyl', n: total, id: h.id, t: h.title, y: h.year || '', c: h.country || '', f: (h.format || []).slice(0, 4).join(', '),
-        th: h.thumb || '', u: h.uri ? 'https://www.discogs.com' + h.uri : '', via, conf: via === 'album' && p.strong ? 'high' : 'medium', ts: Date.now() };
+        th: h.thumb || '', u: h.uri ? 'https://www.discogs.com' + h.uri : '', via, conf: via === 'album' && p.strong ? 'high' : 'medium',
+        ty: h.type === 'master' ? 'master' : 'release', ts: Date.now() };
     }
     return { s: 'none', n: 0, via, ts: Date.now() };
   }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // ---------- marketplace prices ----------
+  let currency = (store.get('spotivinyl.currency') || 'USD');
+  if (!CURRENCIES.includes(currency)) currency = 'USD';
+  const priceable = (a) => { const r = results[a.key]; return r && r.s === 'vinyl' && r.ty !== 'master' && r.id; };
+  const needsPrice = (a) => priceable(a) && !(results[a.key].p && results[a.key].p.cur === currency && Date.now() - results[a.key].p.ts < 7 * 86400 * 1000);
+  async function fetchPrice(a) {
+    const r = results[a.key];
+    const resp = await discogsCall('stats', { release_id: r.id, curr: currency });
+    if (resp.status === 429) { const e = new Error('rate'); e.rate = true; throw e; }
+    if (resp.status === 404) { r.p = { low: null, cur: currency, n: 0, ts: Date.now() }; return; }
+    if (!resp.ok) throw new Error(`Discogs answered HTTP ${resp.status} for the price`);
+    const d = await resp.json();
+    r.p = { low: d.lowest_price ? Number(d.lowest_price.value) : null, cur: d.lowest_price ? d.lowest_price.currency : currency, n: d.num_for_sale || 0, ts: Date.now() };
+  }
+  function fmtPrice(p) {
+    if (!p || p.low == null) return p && p.n === 0 ? 'none for sale' : '';
+    try { return 'from ' + new Intl.NumberFormat(undefined, { style: 'currency', currency: p.cur, maximumFractionDigits: p.low >= 100 ? 0 : 2 }).format(p.low); }
+    catch (e) { return `from ${p.low} ${p.cur}`; }
+  }
+  async function pricePass() {
+    if (running) { stopFlag = true; return; }
+    const list = albums.filter(needsPrice);
+    if (!list.length) { toast('Every vinyl match already has a price'); return; }
+    running = true; stopFlag = false; lastErr = '';
+    $('prices').textContent = 'Pause prices';
+    let backoff = 0, done = 0;
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i]; if (stopFlag) break;
+      setStatus(`Price ${done + 1} of ${list.length}: ${a.artist} — ${a.album}`);
+      try { await fetchPrice(a); saveResults(); queueShared(a.key, { ...results[a.key], shared: false }); backoff = 0; }
+      catch (e) {
+        if (e.rate) { backoff = Math.min(60000, backoff ? backoff * 2 : 15000); setStatus(`Discogs asked us to slow down, waiting ${backoff / 1000}s`); await sleep(backoff); list.push(a); continue; }
+        lastErr = e instanceof TypeError ? 'No network, or the browser blocked the request to Discogs.' : e.message; break;
+      }
+      done++; renderRow(a); updateCounts();
+      await sleep(DELAY_MS);
+    }
+    running = false; stopFlag = false; flushShared();
+    $('prices').textContent = 'Fetch prices';
+    setStatus(lastErr ? 'Stopped.' : `Prices fetched for ${done} albums.`);
+    updateCounts();
+  }
+  $('prices').addEventListener('click', pricePass);
+  const curSel = $('currency');
+  curSel.innerHTML = CURRENCIES.map((c) => `<option value="${c}"${c === currency ? ' selected' : ''}>${c}</option>`).join('');
+  curSel.addEventListener('change', () => { currency = curSel.value; store.set('spotivinyl.currency', currency); updateCounts(); });
+
+  // ---------- wantlist ----------
+  async function toggleWant(a) {
+    const r = results[a.key]; if (!r || r.s !== 'vinyl') return;
+    const adding = !r.w;
+    r.busyWant = true; renderRow(a);
+    try {
+      const resp = await discogsCall(adding ? 'want' : 'unwant', { release_id: r.id }, adding ? 'PUT' : 'DELETE');
+      if (resp.status === 429) throw new Error('Discogs asked us to slow down, try again in a minute');
+      if (!resp.ok && resp.status !== 204) { const d = await resp.json().catch(() => ({})); throw new Error(d.error || d.message || `Discogs answered HTTP ${resp.status}`); }
+      r.w = adding; saveResults(); toast(adding ? 'Added to your Discogs wantlist' : 'Removed from your wantlist');
+    } catch (e) { toast(e instanceof TypeError ? 'The browser could not reach Discogs for this. Try again.' : e.message); }
+    r.busyWant = false; renderRow(a); updateCounts();
+  }
+  let wantSynced = false;
+  async function syncWantlist() {
+    if (wantSynced || !(auth.username || tokenInput.value.trim()) || !albums.length) return;
+    wantSynced = true;
+    const ids = new Set();
+    try {
+      for (let page = 1; page <= 20; page++) {
+        const resp = await discogsCall('wantlist', { page });
+        if (!resp.ok) break;
+        const d = await resp.json();
+        for (const w of d.wants || []) ids.add(w.id);
+        if (!d.pagination || page >= d.pagination.pages) break;
+        await sleep(DELAY_MS);
+      }
+    } catch (e) { wantSynced = false; return; }
+    let changed = 0;
+    for (const a of albums) { const r = results[a.key]; if (r && r.s === 'vinyl' && ids.has(r.id) && !r.w) { r.w = true; changed++; } }
+    if (changed) { saveResults(); render(); }
+  }
 
   function queue() {
     const order = $('order').value;
@@ -387,7 +508,10 @@
     $('t-tracks').textContent = tracks.length;
     $('t-artists').textContent = perArtist.size + ' artists';
     $('t-albums').textContent = albums.length;
-    $('t-vinyl').textContent = c.vinyl; $('t-vinyl-tracks').textContent = c.vt + ' tracks';
+    let total = 0, priced = 0, wants = 0;
+    for (const a of albums) { const r = results[a.key]; if (r && r.s === 'vinyl') { if (r.p && r.p.low != null && r.p.cur === currency) { total += r.p.low; priced++; } if (r.w) wants++; } }
+    $('t-vinyl').textContent = c.vinyl;
+    $('t-vinyl-tracks').textContent = c.vt + ' tracks' + (priced ? ' · all ' + priced + ' priced ' + fmtPrice({ low: total, cur: currency, n: 1 }) : '') + (wants ? ' · ' + wants + ' in wantlist' : '');
     $('t-none').textContent = c.none; $('t-none-tracks').textContent = c.nt + ' tracks';
     $('t-wait').textContent = c.wait;
     if (done && t0) speed = (Date.now() - t0) / done;
@@ -418,6 +542,10 @@
     if (s === 'count') list.sort((a, b) => b.artistCount - a.artistCount || a.artist.localeCompare(b.artist) || a.idx - b.idx);
     else if (s === 'artist') list.sort((a, b) => a.artist.localeCompare(b.artist) || a.album.localeCompare(b.album));
     else if (s === 'year') list.sort((a, b) => ((results[b.key] || {}).y || 0) - ((results[a.key] || {}).y || 0) || a.idx - b.idx);
+    else if (s === 'price') {
+      const pr = (a) => { const r = results[a.key]; return r && r.p && r.p.low != null ? r.p.low : Infinity; };
+      list.sort((a, b) => pr(a) - pr(b) || a.idx - b.idx);
+    }
     return list;
   }
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -437,6 +565,8 @@
         + (r.n > 1 ? `<span class="mono">+${r.n - 1} more pressings</span>` : '')
         + (r.conf === 'medium' ? '<span class="mono">please verify</span>' : '')
         + (r.shared ? '<span class="mono">shared result</span>' : '')
+        + (r.p ? `<span class="chip">${esc(fmtPrice(r.p))}${r.p.n ? ` · ${r.p.n} for sale` : ''}</span>` : (r.ty === 'master' ? '' : `<button class="btn link small" data-act="price" data-k="${esc(a.key)}" type="button">Price</button>`))
+        + (r.ty === 'master' ? '' : `<button class="btn link small want${r.w ? ' on' : ''}" data-act="want" data-k="${esc(a.key)}" type="button"${r.busyWant ? ' disabled' : ''}>${r.w ? '♥ In wantlist' : '♡ Want'}</button>`)
         + `<button class="btn link small" data-act="dismiss" data-k="${esc(a.key)}" type="button">Not a match</button>`
         + `<button class="btn link small" data-act="recheck" data-k="${esc(a.key)}" type="button">Recheck</button></div>`;
     } else if (r && r.s === 'none') {
@@ -471,6 +601,14 @@
     const b = e.target.closest('button[data-act]'); if (!b) return;
     const a = albumByKey.get(b.dataset.k); if (!a) return;
     if (b.dataset.act === 'dismiss') { results[a.key] = { s: 'none', n: 0, manual: true, ts: Date.now() }; saveResults(); renderRow(a); updateCounts(); return; }
+    if (b.dataset.act === 'want') { toggleWant(a); return; }
+    if (b.dataset.act === 'price') {
+      b.disabled = true;
+      fetchPrice(a).then(() => { saveResults(); queueShared(a.key, { ...results[a.key], shared: false }); flushShared(); })
+        .catch((e) => toast(e.rate ? 'Discogs asked us to slow down, try again in a minute' : e.message))
+        .finally(() => { renderRow(a); updateCounts(); });
+      return;
+    }
     delete results[a.key]; saveResults();
     if (running) { renderRow(a); updateCounts(); return; }
     checkOne(a);
@@ -478,12 +616,12 @@
 
   // ---------- export ----------
   function exportRows() {
-    return albums.filter((a) => results[a.key] && results[a.key].s === 'vinyl').map((a) => { const r = results[a.key]; return [a.artist, a.album, r.t, r.y, r.c, r.f, r.u, a.tracks.map((t) => t.title).filter(Boolean).join('; ')]; });
+    return albums.filter((a) => results[a.key] && results[a.key].s === 'vinyl').map((a) => { const r = results[a.key]; return [a.artist, a.album, r.t, r.y, r.c, r.f, r.u, r.p && r.p.low != null ? `${r.p.low} ${r.p.cur}` : '', r.p ? r.p.n : '', r.w ? 'yes' : '', a.tracks.map((t) => t.title).filter(Boolean).join('; ')]; });
   }
   $('export').addEventListener('click', () => {
     const rows = exportRows();
     $('export-title').textContent = `Albums available on vinyl: ${rows.length}`;
-    $('export-text').value = rows.map((r) => `${r[0]} — ${r[1]}  |  ${r[2]} (${[r[3], r[4], r[5]].filter(Boolean).join(', ')})  ${r[6]}`).join('\n') || 'Nothing found yet. Start checking first.';
+    $('export-text').value = rows.map((r) => `${r[0]} — ${r[1]}  |  ${r[2]} (${[r[3], r[4], r[5]].filter(Boolean).join(', ')})${r[7] ? '  from ' + r[7] : ''}${r[9] ? '  ♥' : ''}  ${r[6]}`).join('\n') || 'Nothing found yet. Start checking first.';
     $('export-box').hidden = false; $('export-box').scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
   $('export-close').addEventListener('click', () => { $('export-box').hidden = true; });
@@ -493,7 +631,7 @@
     else { ta.select(); done(); }
   });
   $('download').addEventListener('click', () => {
-    const csv = [['Artist', 'Album', 'Discogs title', 'Year', 'Country', 'Format', 'Discogs URL', 'Tracks']].concat(exportRows())
+    const csv = [['Artist', 'Album', 'Discogs title', 'Year', 'Country', 'Format', 'Discogs URL', 'Lowest price', 'For sale', 'In wantlist', 'Tracks']].concat(exportRows())
       .map((r) => r.map((c) => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"').join(',')).join('\n');
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })); a.download = 'pressd-vinyl.csv'; document.body.appendChild(a); a.click(); a.remove();
   });
@@ -558,7 +696,7 @@
     else if (window.SPOTIFY_LIBRARY && window.SPOTIFY_LIBRARY.length) buildLibrary(window.SPOTIFY_LIBRARY, { source: 'library.js', count: window.SPOTIFY_LIBRARY.length });
     else buildLibrary([], { source: '', count: 0 });
     await initAuth();
-    if (tracks.length) pullShared();
+    if (tracks.length) { await pullShared(); syncWantlist(); }
   })();
   window.addEventListener('beforeunload', (e) => { if (running) { e.preventDefault(); e.returnValue = ''; } });
 })();

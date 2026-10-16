@@ -24,7 +24,9 @@ Pressd checks every album against Discogs and tells you what you could own on wa
 1. **Drop in a library export.** The file is parsed in your browser and never uploaded.
 2. **Log in with Discogs** (or paste a personal token).
 3. **Press *Start checking*.** Each album or single is looked up on Discogs with a vinyl filter, about one per second. Every hit links to the Discogs release with year, country and format, and can be dismissed if it is the wrong record.
-4. **Keep the list.** Filter by *On vinyl*, copy the list or download it as CSV, and come back any time: results are saved as they arrive.
+4. **See what it costs.** *Fetch prices* reads the lowest marketplace price and the number of copies for sale for every match, in the currency you pick, and the *On vinyl* tile adds up what buying everything would start at. *Cheapest first* sorts by it.
+5. **Want it.** One click adds a release to your Discogs wantlist; releases already on your wantlist are marked when you log in.
+6. **Keep the list.** Filter by *On vinyl*, copy the list or download it as CSV with prices and wantlist flags, and come back any time: results are saved as they arrive.
 
 A **shared cache** makes it faster for everyone. An album anyone has already resolved is not looked up again, so popular records resolve instantly and only your long tail hits Discogs.
 
@@ -79,7 +81,8 @@ Without the D1 binding the page falls back to token mode. Without the Discogs ke
 | `app.js` | library state, check loop, list, export, statistics, hosted-mode client |
 | `importers.js` | library parsers (also usable in Node for tests) |
 | `functions/api/oauth.js` | signs each step of the Discogs OAuth handshake; the browser sends them |
-| `functions/api/sign.js` | signs a Discogs search for the logged-in user |
+| `functions/api/sign.js` | signs Discogs calls for the logged-in user: search, marketplace stats, wantlist |
+| `functions/api/want.js` | server-side fallback for wantlist writes when the browser cannot send them |
 | `functions/api/cache.js` | shared verdict cache (read: anyone, write: logged-in users) |
 | `functions/api/me.js` | who is logged in, which features the deployment has |
 | `functions/api/search.js` | server-side search proxy, last-resort fallback |
@@ -102,9 +105,9 @@ Importers.importLibrary(require('fs').readFileSync('export.csv', 'utf8'), 'expor
 
 ## Roadmap
 
-- Add found albums to your Discogs wantlist in one click.
-- Marketplace price range next to each match.
 - Your results across devices (the login already identifies you).
+- Price alerts: tell me when a wanted record drops below a price.
+- Collection check: hide what you already own on Discogs.
 
 ## Credits
 
