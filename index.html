@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vinyl Check</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one column, a sticky toolbar with the progress of the Discogs check, album cards underneath.
+   Palette: cool graphite neutrals, a record-label red accent, semantic green/amber for the check status. */
+:root {
+  --bg: #f3f4f6;
+  --surface: #ffffff;
+  --surface-2: #e9ebef;
+  --line: #d6d9e0;
+  --fg: #16181d;
+  --fg-2: #4b505c;
+  --fg-3: #7b8190;
+  --accent: #c81e3c;
+  --accent-ink: #ffffff;
+  --good: #1f7a43;
+  --good-bg: #dcf3e4;
+  --bad: #9a3412;
+  --bad-bg: #fde8dc;
+  --wait: #6b7280;
+  --wait-bg: #e9ebef;
+  --bar: #2a4d8f;
+  --focus: #2a4d8f;
+  --font-display: "Bricolage Grotesque", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --radius: 10px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121317; --surface: #1b1d23; --surface-2: #23262e; --line: #30343e;
+    --fg: #eceef2; --fg-2: #b3b8c4; --fg-3: #7d8392;
+    --accent: #ff5c78; --accent-ink: #1b0509;
+    --good: #5fd58b; --good-bg: #14301f; --bad: #f4a46b; --bad-bg: #3a1f10;
+    --wait: #9aa0ad; --wait-bg: #23262e; --bar: #7ea2e6; --focus: #7ea2e6;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121317; --surface: #1b1d23; --surface-2: #23262e; --line: #30343e;
+  --fg: #eceef2; --fg-2: #b3b8c4; --fg-3: #7d8392;
+  --accent: #ff5c78; --accent-ink: #1b0509;
+  --good: #5fd58b; --good-bg: #14301f; --bad: #f4a46b; --bad-bg: #3a1f10;
+  --wait: #9aa0ad; --wait-bg: #23262e; --bar: #7ea2e6; --focus: #7ea2e6;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 48px;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.wrap { max-width: 1040px; margin: 0 auto; }
+a { color: var(--accent); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+button, input, select { font: inherit; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+
+header.top { padding-block: 28px 18px; display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; justify-content: space-between; }
+header.top h1 { font-size: clamp(30px, 5vw, 44px); font-weight: 800; letter-spacing: -0.02em; line-height: 1; }
+header.top h1 .disc { display: inline-block; width: .72em; height: .72em; border-radius: 50%; vertical-align: -0.06em; margin-right: .22em;
+  background: radial-gradient(circle, var(--accent) 0 22%, var(--fg) 24% 100%); }
+header.top p { margin: 6px 0 0; color: var(--fg-2); max-width: 60ch; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+.setup { display: grid; gap: 12px; }
+.setup .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.setup label { font-weight: 600; font-size: 13px; color: var(--fg-2); text-transform: uppercase; letter-spacing: .04em; }
+input[type=password], input[type=search], input[type=text], select {
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0;
+}
+input[type=password] { flex: 1 1 260px; font-family: var(--font-mono); font-size: 13px; }
+.hint { color: var(--fg-3); font-size: 13px; margin: 0; }
+.hint code { font-family: var(--font-mono); font-size: 12px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+
+.btn { border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 8px; padding: 8px 14px; cursor: pointer; font-weight: 500; white-space: nowrap; }
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.small { padding: 4px 10px; font-size: 13px; }
+.filebtn { position: relative; overflow: hidden; }
+.filebtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-block: 16px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
+.tile .k { font-size: 12px; color: var(--fg-3); text-transform: uppercase; letter-spacing: .05em; }
+.tile .v { font-family: var(--font-display); font-size: 30px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.tile .s { font-size: 12px; color: var(--fg-2); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.tile.good .v { color: var(--good); }
+.tile.bad .v { color: var(--bad); }
+
+.toolbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding-block: 10px; display: grid; gap: 10px; }
+.toolbar .panel { display: grid; gap: 10px; min-width: 0; }
+.progress { height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; display: flex; }
+.progress i { display: block; height: 100%; }
+.progress .p-good { background: var(--good); }
+.progress .p-bad { background: var(--bad); }
+.status { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; font-size: 13px; color: var(--fg-2); font-variant-numeric: tabular-nums; }
+.status .err { color: var(--bad); font-weight: 600; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.controls .spacer { flex: 1; }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.filters input[type=search] { flex: 1 1 200px; }
+.seg { display: flex; flex-wrap: wrap; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { flex: 1 1 auto; border: 0; background: var(--surface); color: var(--fg-2); padding: 7px 12px; cursor: pointer; font-size: 14px; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed=true] { background: var(--fg); color: var(--bg); font-weight: 600; }
+.seg button .n { font-variant-numeric: tabular-nums; opacity: .7; margin-left: 4px; font-size: 12px; }
+
+.list { display: grid; gap: 8px; margin-top: 8px; }
+.album { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 6px 12px; align-items: start; }
+.album .cover { width: 56px; height: 56px; border-radius: 6px; background: var(--surface-2); overflow: hidden; display: grid; place-items: center; color: var(--fg-3); }
+.album .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.album .cover svg { width: 32px; height: 32px; }
+.album .main { min-width: 0; }
+.album .title { font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.album .artist { color: var(--fg-2); font-size: 14px; overflow-wrap: anywhere; }
+.album .tracks { margin: 6px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--fg-2); display: flex; flex-wrap: wrap; gap: 2px 12px; }
+.album .tracks li::before { content: "♪ "; color: var(--fg-3); }
+.album .tracks a { color: inherit; text-decoration: none; }
+.album .tracks a:hover { text-decoration: underline; }
+.album .match { grid-column: 2; font-size: 13px; color: var(--fg-2); overflow-wrap: anywhere; }
+.album .match a { font-weight: 500; }
+.album .match .mono { font-family: var(--font-mono); font-size: 12px; color: var(--fg-3); }
+.album .side { display: grid; gap: 6px; justify-items: end; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.pill.vinyl { color: var(--good); background: var(--good-bg); }
+.pill.none { color: var(--bad); background: var(--bad-bg); }
+.pill.wait { color: var(--wait); background: var(--wait-bg); }
+.pill.busy::before { animation: spin 1s linear infinite; border-radius: 50%; background: conic-gradient(currentColor 0 70%, transparent 70% 100%); }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .pill.busy::before { animation: none; } }
+.more { text-align: center; padding: 10px; }
+.empty { text-align: center; color: var(--fg-3); padding: 32px 10px; }
+
+details.stats { margin-top: 28px; }
+details.stats summary { cursor: pointer; font-family: var(--font-display); font-size: 20px; font-weight: 700; padding-block: 6px; }
+.statgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 10px; }
+.statgrid h3 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+.bars { display: grid; gap: 5px; font-size: 13px; }
+.bars .b { display: grid; grid-template-columns: minmax(0, 150px) 1fr 36px; gap: 8px; align-items: center; }
+.bars .b span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bars .b i { display: block; height: 10px; border-radius: 0 3px 3px 0; background: var(--bar); min-width: 2px; }
+.bars .b b { font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; color: var(--fg-2); }
+.years { display: flex; align-items: flex-end; gap: 2px; height: 120px; border-bottom: 1px solid var(--line); padding-top: 14px; }
+.years i { flex: 1; background: var(--bar); border-radius: 3px 3px 0 0; min-width: 2px; position: relative; }
+.years i[data-label]::after { content: attr(data-label); position: absolute; left: 50%; top: -16px; transform: translateX(-50%); font-size: 11px; color: var(--fg-2); font-variant-numeric: tabular-nums; }
+.yearaxis { display: flex; justify-content: space-between; font-size: 11px; color: var(--fg-3); margin-top: 4px; font-variant-numeric: tabular-nums; }
+.note { font-size: 13px; color: var(--fg-3); margin: 6px 0 0; }
+.toast { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 14px; z-index: 20; }
+textarea.export { width: 100%; min-height: 160px; font-family: var(--font-mono); font-size: 12px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+
+@media (max-width: 560px) {
+  .album { grid-template-columns: 44px minmax(0, 1fr); }
+  .album .cover { width: 44px; height: 44px; }
+  .album .side { grid-column: 1 / -1; justify-items: start; grid-auto-flow: column; justify-content: start; }
+  .album .match { grid-column: 1 / -1; }
+  .bars .b { grid-template-columns: minmax(0, 110px) 1fr 36px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+  <div>
+    <h1><span class="disc" aria-hidden="true"></span>Vinyl Check</h1>
+    <p>Какие из залайканных треков в Spotify выходили на виниле. Проверка идёт по базе Discogs, альбом за альбомом, прямо из браузера.</p>
+  </div>
+  <div class="row">
+    <label class="btn filebtn">Загрузить другой CSV<input id="csvfile" type="file" accept=".csv,text/csv" aria-label="Загрузить CSV из Spotify"></label>
+  </div>
+</header>
+
+<section class="panel setup" aria-labelledby="setup-h">
+  <div class="row">
+    <label for="token" id="setup-h">Discogs token</label>
+    <input id="token" type="password" autocomplete="off" placeholder="персональный токен Discogs" spellcheck="false">
+    <button class="btn" id="save-token" type="button">Сохранить</button>
+  </div>
+  <p class="hint">Токен бесплатный: <a href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">discogs.com/settings/developers</a> → «Generate new token». Он хранится только в этом браузере. Без токена поиск Discogs не отвечает. Лимит у Discogs 60 запросов в минуту, поэтому вся библиотека проверяется примерно за час. Можно закрыть вкладку и продолжить позже, результаты сохраняются.</p>
+</section>
+
+<section class="tiles" aria-label="Итоги">
+  <div class="tile"><div class="k">Треков</div><div class="v" id="t-tracks">0</div><div class="s" id="t-artists"></div></div>
+  <div class="tile"><div class="k">Альбомов / синглов</div><div class="v" id="t-albums">0</div><div class="s">отдельных запросов в Discogs</div></div>
+  <div class="tile good"><div class="k">Есть на виниле</div><div class="v" id="t-vinyl">0</div><div class="s" id="t-vinyl-tracks"></div></div>
+  <div class="tile bad"><div class="k">Нет на виниле</div><div class="v" id="t-none">0</div><div class="s" id="t-none-tracks"></div></div>
+  <div class="tile"><div class="k">Не проверено</div><div class="v" id="t-wait">0</div><div class="s" id="t-eta"></div></div>
+</section>
+
+<div class="toolbar">
+  <div class="panel">
+    <div class="progress" aria-hidden="true"><i class="p-good" id="p-good" style="width:0"></i><i class="p-bad" id="p-bad" style="width:0"></i></div>
+    <div class="status"><span id="st-text">Готово к проверке.</span><span id="st-err" class="err"></span></div>
+    <div class="controls">
+      <button class="btn primary" id="run" type="button">Начать проверку</button>
+      <select id="order" aria-label="Порядок проверки">
+        <option value="artist">Сначала частые исполнители</option>
+        <option value="library">В порядке библиотеки</option>
+        <option value="filtered">Только то, что видно в списке</option>
+      </select>
+      <span class="spacer"></span>
+      <button class="btn" id="export" type="button">Список винила</button>
+      <button class="btn" id="reset" type="button">Сбросить результаты</button>
+    </div>
+    <div class="filters">
+      <div class="seg" role="group" aria-label="Фильтр по статусу">
+        <button type="button" data-f="all" aria-pressed="true">Все<span class="n" id="n-all"></span></button>
+        <button type="button" data-f="vinyl" aria-pressed="false">На виниле<span class="n" id="n-vinyl"></span></button>
+        <button type="button" data-f="none" aria-pressed="false">Нет<span class="n" id="n-none"></span></button>
+        <button type="button" data-f="wait" aria-pressed="false">Не проверено<span class="n" id="n-wait"></span></button>
+      </div>
+      <input id="q" type="search" placeholder="Поиск: исполнитель, альбом, трек" aria-label="Поиск по библиотеке">
+      <select id="sort" aria-label="Сортировка">
+        <option value="count">По числу треков</option>
+        <option value="artist">По исполнителю</option>
+        <option value="year">По году издания</option>
+        <option value="library">Как в библиотеке</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<div id="export-box" class="panel" hidden>
+  <div class="row" style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+    <strong id="export-title">Альбомы, которые есть на виниле</strong>
+    <span><button class="btn small" id="copy" type="button">Скопировать</button> <button class="btn small" id="download" type="button">Скачать CSV</button> <button class="btn small" id="export-close" type="button">Закрыть</button></span>
+  </div>
+  <textarea class="export" id="export-text" readonly aria-label="Экспорт"></textarea>
+</div>
+
+<main>
+  <div class="list" id="list"></div>
+  <div class="more" id="more" hidden><button class="btn" id="more-btn" type="button">Показать ещё</button></div>
+  <div class="empty" id="empty" hidden>Ничего не найдено по этому фильтру.</div>
+</main>
+
+<details class="stats" id="stats">
+  <summary>Статистика библиотеки</summary>
+  <div class="statgrid">
+    <div class="panel"><h3>Исполнители с наибольшим числом лайков</h3><div class="bars" id="top-artists"></div></div>
+    <div class="panel"><h3>Годы регистрации треков по ISRC</h3><div class="years" id="years"></div><div class="yearaxis" id="yearaxis"></div><p class="note">Год из кода ISRC: обычно год релиза, иногда год перерегистрации. До 2005 года треков мало, они собраны в первом столбце.</p></div>
+    <div class="panel"><h3>Страна регистрации ISRC</h3><div class="bars" id="countries"></div><p class="note">QZ, QM, QT, TC: коды дистрибьюторов (DistroKid, TuneCore и другие), а не страны. Это независимые релизы, у которых винил бывает редко.</p></div>
+    <div class="panel"><h3>Состав библиотеки</h3><div class="bars" id="misc"></div></div>
+  </div>
+</details>
+</div>
+
+<script src="library.js"></script>
+<script>
+(function () {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const LS_TOKEN = 'vinylcheck.token', LS_RES = 'vinylcheck.results.v1', LS_LIB = 'vinylcheck.library';
+  const DELAY_MS = 1100;           // Discogs allows 60 authenticated requests a minute
+  const PAGE = 60;
+
+  // ---------- storage helpers ----------
+  const store = {
+    get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } },
+    del(k) { try { localStorage.removeItem(k); } catch (e) {} }
+  };
+
+  // ---------- normalisation ----------
+  const strip = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+  function cleanAlbum(s) {
+    return strip(s)
+      .replace(/\s*[\(\[][^\)\]]*(feat\.|ft\.|remix|edit|version|mix|deluxe|remaster|bonus|edition|instrumental|acoustic|live)[^\)\]]*[\)\]]/gi, '')
+      .replace(/\s+-\s+(single|ep|deluxe.*|remaster.*|.*edition)$/i, '')
+      .replace(/\s+/g, ' ').trim();
+  }
+  function cleanTrack(s) {
+    return strip(s)
+      .replace(/\s*[\(\[][^\)\]]*[\)\]]/g, '')
+      .replace(/\s+-\s+.*$/, '')
+      .replace(/\s+/g, ' ').trim();
+  }
+  function cleanArtist(s) {
+    return strip(s).replace(/\s*[\(\[].*?[\)\]]/g, '').replace(/\s*(,|&| x | feat\.?| ft\.?)\s.*$/i, '').trim() || s;
+  }
+  const key = (artist, album) => (cleanArtist(artist) + '|' + cleanAlbum(album)).toLowerCase();
+
+  // ---------- library ----------
+  let tracks = [];     // {track, artist, album, isrc, id}
+  let albums = [];     // {key, artist, album, tracks:[], idx}
+  let albumByKey = new Map();
+  let results = store.get(LS_RES) || {};  // key -> {s:'vinyl'|'none', n, id, t, y, c, f, th, u, via, ts}
+
+  function buildLibrary(rows) {
+    tracks = rows.map((r, i) => ({ track: r[0], artist: r[1], album: r[2], isrc: r[3] || '', id: r[4] || '', i }));
+    albumByKey = new Map();
+    albums = [];
+    for (const t of tracks) {
+      const k = key(t.artist, t.album);
+      let a = albumByKey.get(k);
+      if (!a) { a = { key: k, artist: t.artist, album: t.album, tracks: [], idx: albums.length }; albumByKey.set(k, a); albums.push(a); }
+      a.tracks.push(t);
+    }
+    const perArtist = new Map();
+    for (const t of tracks) perArtist.set(t.artist, (perArtist.get(t.artist) || 0) + 1);
+    for (const a of albums) a.artistCount = perArtist.get(a.artist) || 0;
+    renderStats(perArtist);
+    render();
+  }
+
+  function parseCSV(text) {
+    const rows = []; let row = [], cell = '', q = false;
+    text = text.replace(/^﻿/, '');
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (q) {
+        if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+        else cell += ch;
+      } else if (ch === '"') q = true;
+      else if (ch === ',') { row.push(cell); cell = ''; }
+      else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+      else cell += ch;
+    }
+    if (cell.length || row.length) { row.push(cell); rows.push(row); }
+    const head = rows.shift().map((h) => h.trim().toLowerCase());
+    const col = (names) => head.findIndex((h) => names.some((n) => h.includes(n)));
+    const ct = col(['track name', 'track', 'название']), ca = col(['artist']), cal = col(['album']), ci = col(['isrc']), cid = col(['spotify']);
+    return rows.filter((r) => r.length > 2 && r[ct]).map((r) => [r[ct], r[ca] || '', r[cal] || r[ct], ci >= 0 ? r[ci] : '', cid >= 0 ? r[cid] : '']);
+  }
+
+  // ---------- Discogs ----------
+  let running = false, stopFlag = false, lastErr = '';
+  const tokenInput = $('token');
+  tokenInput.value = store.get(LS_TOKEN) || '';
+  $('save-token').addEventListener('click', () => { store.set(LS_TOKEN, tokenInput.value.trim()); toast('Токен сохранён'); });
+
+  async function discogs(params) {
+    const token = tokenInput.value.trim();
+    if (!token) throw new Error('Нужен токен Discogs: вставьте его в поле выше.');
+    const u = new URL('https://api.discogs.com/database/search');
+    for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+    u.searchParams.set('format', 'Vinyl');
+    u.searchParams.set('per_page', '5');
+    u.searchParams.set('token', token);
+    const r = await fetch(u.toString(), { headers: { 'Accept': 'application/json' } });
+    if (r.status === 429) { const e = new Error('rate'); e.rate = true; throw e; }
+    if (r.status === 401 || r.status === 403) throw new Error('Discogs отклонил токен (HTTP ' + r.status + '). Проверьте его на странице разработчика.');
+    if (!r.ok) throw new Error('Discogs ответил HTTP ' + r.status);
+    return r.json();
+  }
+
+  function pick(res, albumTitle) {
+    const list = (res.results || []).filter((x) => x.type === 'release' || x.type === 'master');
+    if (!list.length) return null;
+    const want = cleanAlbum(albumTitle).toLowerCase();
+    const scored = list.map((x) => {
+      const t = (x.title || '').toLowerCase();
+      let s = 0;
+      if (t.includes(want)) s += 2;
+      if (x.year) s += 1;
+      if ((x.format || []).some((f) => /lp|album/i.test(f))) s += 1;
+      return { x, s };
+    }).sort((a, b) => b.s - a.s);
+    return scored[0].x;
+  }
+
+  async function checkAlbum(a) {
+    const artist = cleanArtist(a.artist);
+    let res = await discogs({ artist, release_title: cleanAlbum(a.album) });
+    let via = 'album';
+    let hit = pick(res, a.album), total = (res.pagination && res.pagination.items) || 0;
+    if (!hit) {
+      await sleep(DELAY_MS);
+      const tr = cleanTrack(a.tracks[0].track);
+      if (tr && tr.toLowerCase() !== cleanAlbum(a.album).toLowerCase()) {
+        res = await discogs({ artist, track: tr });
+        via = 'track'; hit = pick(res, a.album); total = (res.pagination && res.pagination.items) || 0;
+      }
+    }
+    if (hit) {
+      return { s: 'vinyl', n: total, id: hit.id, t: hit.title, y: hit.year || '', c: hit.country || '', f: (hit.format || []).slice(0, 4).join(', '),
+        th: hit.thumb || '', u: hit.uri ? 'https://www.discogs.com' + hit.uri : '', via, ts: Date.now() };
+    }
+    return { s: 'none', n: 0, via, ts: Date.now() };
+  }
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  function queue() {
+    const order = $('order').value;
+    let list = albums.filter((a) => !results[a.key]);
+    if (order === 'artist') list.sort((a, b) => b.artistCount - a.artistCount || a.idx - b.idx);
+    else if (order === 'filtered') { const vis = new Set(filtered().map((a) => a.key)); list = list.filter((a) => vis.has(a.key)); }
+    return list;
+  }
+
+  async function run() {
+    if (running) { stopFlag = true; return; }
+    running = true; stopFlag = false; lastErr = '';
+    $('run').textContent = 'Пауза';
+    let backoff = 0;
+    const q = queue();
+    let done = 0, t0 = Date.now();
+    for (const a of q) {
+      if (stopFlag) break;
+      a.busy = true; setStatus(`Проверяю: ${a.artist} — ${a.album}`); renderRow(a);
+      try {
+        const r = await checkAlbum(a);
+        results[a.key] = r;
+        if (!store.set(LS_RES, results)) lastErr = 'Хранилище браузера переполнено: результаты не сохранятся после закрытия вкладки.';
+        backoff = 0;
+      } catch (e) {
+        if (e.rate) { backoff = Math.min(60000, backoff ? backoff * 2 : 15000); setStatus(`Discogs просит подождать, пауза ${backoff / 1000} с`); await sleep(backoff); a.busy = false; q.push(a); continue; }
+        if (e instanceof TypeError) { lastErr = 'Сеть недоступна или браузер заблокировал запрос к Discogs. Проверка остановлена.'; }
+        else lastErr = e.message;
+        a.busy = false; break;
+      }
+      a.busy = false; done++;
+      updateCounts(done, t0);
+      renderRow(a);
+      await sleep(DELAY_MS);
+    }
+    running = false; stopFlag = false;
+    $('run').textContent = queue().length ? 'Продолжить проверку' : 'Всё проверено';
+    setStatus(lastErr ? 'Остановлено.' : (queue().length ? 'Пауза.' : 'Проверка завершена.'));
+    updateCounts();
+  }
+  $('run').addEventListener('click', run);
+
+  function setStatus(t) { $('st-text').textContent = t; $('st-err').textContent = lastErr; }
+
+  // ---------- counts & tiles ----------
+  function tally() {
+    let vinyl = 0, none = 0, wait = 0, vt = 0, nt = 0;
+    for (const a of albums) {
+      const r = results[a.key];
+      if (!r) wait++; else if (r.s === 'vinyl') { vinyl++; vt += a.tracks.length; } else { none++; nt += a.tracks.length; }
+    }
+    return { vinyl, none, wait, vt, nt };
+  }
+  let speed = null;
+  function updateCounts(done, t0) {
+    const c = tally();
+    $('t-tracks').textContent = tracks.length;
+    $('t-artists').textContent = new Set(tracks.map((t) => t.artist)).size + ' исполнителей';
+    $('t-albums').textContent = albums.length;
+    $('t-vinyl').textContent = c.vinyl; $('t-vinyl-tracks').textContent = c.vt + ' треков';
+    $('t-none').textContent = c.none; $('t-none-tracks').textContent = c.nt + ' треков';
+    $('t-wait').textContent = c.wait;
+    if (done && t0) speed = (Date.now() - t0) / done;
+    $('t-eta').textContent = c.wait && speed ? 'ещё около ' + Math.max(1, Math.round(c.wait * speed / 60000)) + ' мин' : (c.wait ? 'примерно ' + Math.round(c.wait * 1.6 / 60) + ' мин' : '');
+    $('p-good').style.width = (100 * c.vinyl / (albums.length || 1)) + '%';
+    $('p-bad').style.width = (100 * c.none / (albums.length || 1)) + '%';
+    $('n-all').textContent = albums.length; $('n-vinyl').textContent = c.vinyl; $('n-none').textContent = c.none; $('n-wait').textContent = c.wait;
+    $('run').textContent = running ? 'Пауза' : (c.wait ? (c.wait === albums.length ? 'Начать проверку' : 'Продолжить проверку') : 'Всё проверено');
+  }
+
+  // ---------- list ----------
+  let filter = 'all', query = '', shown = PAGE;
+  document.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => {
+    filter = b.dataset.f; document.querySelectorAll('.seg button').forEach((x) => x.setAttribute('aria-pressed', x === b)); shown = PAGE; render();
+  }));
+  $('q').addEventListener('input', (e) => { query = e.target.value.trim().toLowerCase(); shown = PAGE; render(); });
+  $('sort').addEventListener('change', () => { shown = PAGE; render(); });
+  $('more-btn').addEventListener('click', () => { shown += PAGE; render(); });
+
+  function statusOf(a) { const r = results[a.key]; return r ? r.s : 'wait'; }
+  function filtered() {
+    let list = albums;
+    if (filter !== 'all') list = list.filter((a) => statusOf(a) === filter);
+    if (query) list = list.filter((a) => (a.artist + ' ' + a.album + ' ' + a.tracks.map((t) => t.track).join(' ')).toLowerCase().includes(query));
+    const s = $('sort').value;
+    list = list.slice();
+    if (s === 'count') list.sort((a, b) => b.artistCount - a.artistCount || a.artist.localeCompare(b.artist) || a.idx - b.idx);
+    else if (s === 'artist') list.sort((a, b) => a.artist.localeCompare(b.artist, 'ru') || a.album.localeCompare(b.album, 'ru'));
+    else if (s === 'year') list.sort((a, b) => ((results[b.key] || {}).y || 0) - ((results[a.key] || {}).y || 0) || a.idx - b.idx);
+    return list;
+  }
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const DISC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 6a6 6 0 0 1 6 6"/></svg>';
+
+  function rowHTML(a) {
+    const r = results[a.key];
+    const st = a.busy ? 'busy' : (r ? r.s : 'wait');
+    const pill = st === 'vinyl' ? '<span class="pill vinyl">На виниле</span>' : st === 'none' ? '<span class="pill none">Не найдено</span>'
+      : st === 'busy' ? '<span class="pill wait busy">Проверяю</span>' : '<span class="pill wait">Не проверено</span>';
+    const cover = r && r.th ? `<img src="${esc(r.th)}" alt="" loading="lazy" onerror="this.remove()">` : DISC;
+    let match = '';
+    if (r && r.s === 'vinyl') {
+      const meta = [r.y, r.c, r.f].filter(Boolean).join(' · ');
+      match = `<div class="match">Discogs: <a href="${esc(r.u)}" target="_blank" rel="noopener">${esc(r.t)}</a> <span class="mono">${esc(meta)}</span>`
+        + (r.n > 1 ? ` <span class="mono">· ещё ${r.n - 1} изд.</span>` : '')
+        + (r.via === 'track' ? ' <span class="mono">· найдено по треку</span>' : '') + '</div>';
+    } else if (r && r.s === 'none') {
+      const q = encodeURIComponent(cleanArtist(a.artist) + ' ' + cleanAlbum(a.album));
+      match = `<div class="match"><span class="mono">Ни одного винилового издания.</span> <a href="https://www.discogs.com/search/?q=${q}&format_exact=Vinyl" target="_blank" rel="noopener">Поискать вручную</a></div>`;
+    }
+    const tl = a.tracks.slice(0, 6).map((t) => `<li><a href="https://open.spotify.com/track/${esc(t.id)}" target="_blank" rel="noopener">${esc(t.track)}</a></li>`).join('')
+      + (a.tracks.length > 6 ? `<li>ещё ${a.tracks.length - 6}</li>` : '');
+    const single = a.tracks.length === 1 && cleanTrack(a.tracks[0].track).toLowerCase() === cleanAlbum(a.album).toLowerCase();
+    return `<div class="cover">${cover}</div><div class="main"><div class="title">${esc(a.album)}${single ? ' <span class="mono" style="font-size:12px;color:var(--fg-3)">сингл</span>' : ''}</div><div class="artist">${esc(a.artist)}</div>`
+      + (single ? '' : `<ul class="tracks">${tl}</ul>`) + `</div><div class="side">${pill}</div>${match}`;
+  }
+  function renderRow(a) {
+    const el = document.querySelector(`.album[data-k="${CSS.escape(a.key)}"]`);
+    if (el) el.innerHTML = rowHTML(a);
+  }
+  function render() {
+    const list = filtered();
+    const frag = document.createDocumentFragment();
+    for (const a of list.slice(0, shown)) {
+      const el = document.createElement('article'); el.className = 'album'; el.dataset.k = a.key; el.innerHTML = rowHTML(a); frag.appendChild(el);
+    }
+    $('list').replaceChildren(frag);
+    $('more').hidden = list.length <= shown;
+    $('empty').hidden = list.length > 0;
+    updateCounts();
+  }
+
+  // ---------- export ----------
+  function exportRows() {
+    return albums.filter((a) => results[a.key] && results[a.key].s === 'vinyl').map((a) => { const r = results[a.key]; return [a.artist, a.album, r.t, r.y, r.c, r.f, r.u, a.tracks.map((t) => t.track).join('; ')]; });
+  }
+  $('export').addEventListener('click', () => {
+    const rows = exportRows();
+    $('export-title').textContent = `Альбомы, которые есть на виниле: ${rows.length}`;
+    $('export-text').value = rows.map((r) => `${r[0]} — ${r[1]}  |  ${r[2]} (${[r[3], r[4], r[5]].filter(Boolean).join(', ')})  ${r[6]}`).join('\n') || 'Пока ничего не найдено. Запустите проверку.';
+    $('export-box').hidden = false; $('export-box').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  $('export-close').addEventListener('click', () => { $('export-box').hidden = true; });
+  $('copy').addEventListener('click', () => {
+    const ta = $('export-text');
+    const done = () => toast('Скопировано');
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ta.value).then(done, () => { ta.select(); done(); });
+    else { ta.select(); done(); }
+  });
+  $('download').addEventListener('click', () => {
+    const csv = [['Artist', 'Album', 'Discogs title', 'Year', 'Country', 'Format', 'Discogs URL', 'Tracks']].concat(exportRows())
+      .map((r) => r.map((c) => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"').join(',')).join('\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })); a.download = 'vinyl.csv'; document.body.appendChild(a); a.click(); a.remove();
+  });
+
+  // ---------- reset / upload ----------
+  let resetArmed = false;
+  $('reset').addEventListener('click', () => {
+    if (!resetArmed) { resetArmed = true; $('reset').textContent = 'Точно сбросить?'; setTimeout(() => { resetArmed = false; $('reset').textContent = 'Сбросить результаты'; }, 4000); return; }
+    results = {}; store.del(LS_RES); resetArmed = false; $('reset').textContent = 'Сбросить результаты'; speed = null; render(); toast('Результаты очищены');
+  });
+  $('csvfile').addEventListener('change', (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    const fr = new FileReader();
+    fr.onload = () => {
+      try { const rows = parseCSV(String(fr.result)); if (!rows.length) throw 0; store.set(LS_LIB, rows); buildLibrary(rows); toast(`Загружено треков: ${rows.length}`); }
+      catch (err) { lastErr = 'Не удалось прочитать CSV. Нужен экспорт с колонками Track name, Artist name, Album.'; setStatus('Ошибка загрузки.'); }
+    };
+    fr.readAsText(f, 'utf-8');
+  });
+
+  let toastT;
+  function toast(msg) {
+    let t = document.querySelector('.toast'); if (!t) { t = document.createElement('div'); t.className = 'toast'; document.body.appendChild(t); }
+    t.textContent = msg; clearTimeout(toastT); toastT = setTimeout(() => t.remove(), 2200);
+  }
+
+  // ---------- stats ----------
+  function bars(el, pairs, total) {
+    const max = Math.max(...pairs.map((p) => p[1]), 1);
+    el.innerHTML = pairs.map((p) => `<div class="b"><span title="${esc(p[0])}">${esc(p[0])}</span><i style="width:${(100 * p[1] / max).toFixed(1)}%"></i><b>${total ? Math.round(100 * p[1] / total) + '%' : p[1]}</b></div>`).join('');
+  }
+  function renderStats(perArtist) {
+    bars($('top-artists'), [...perArtist.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15));
+    const years = new Map(); let early = 0;
+    for (const t of tracks) {
+      const m = /^[A-Za-z]{2}[A-Za-z0-9]{3}(\d{2})/.exec(t.isrc); if (!m) continue;
+      let y = +m[1]; y = y < 40 ? 2000 + y : 1900 + y; if (y > 2026) continue;
+      if (y < 2005) early++; else years.set(y, (years.get(y) || 0) + 1);
+    }
+    const ys = [...years.keys()].sort(); const vals = ys.map((y) => years.get(y)); const max = Math.max(...vals, early, 1);
+    const peak = ys[vals.indexOf(Math.max(...vals))];
+    $('years').innerHTML = `<i style="height:${(100 * early / max).toFixed(1)}%" title="до 2005: ${early}"></i>` + ys.map((y) => `<i style="height:${(100 * years.get(y) / max).toFixed(1)}%" title="${y}: ${years.get(y)}"${y === peak ? ` data-label="${years.get(y)}"` : ''}></i>`).join('');
+    $('yearaxis').innerHTML = `<span>до 2005</span><span>${ys[Math.floor(ys.length / 2)] || ''}</span><span>${ys[ys.length - 1] || ''}</span>`;
+    const cc = new Map();
+    const names = { QZ: 'QZ (дистрибьюторы)', TC: 'TC (TuneCore)', QM: 'QM (дистрибьюторы)', QT: 'QT (дистрибьюторы)', GB: 'Великобритания', US: 'США', CA: 'Канада', JP: 'Япония', SE: 'Швеция', FR: 'Франция', NL: 'Нидерланды', DE: 'Германия', GX: 'GX (дистрибьюторы)', UK: 'Великобритания (UK)', RU: 'Россия', AU: 'Австралия', FI: 'Финляндия', NO: 'Норвегия', DK: 'Дания', IT: 'Италия', ES: 'Испания', PL: 'Польша' };
+    for (const t of tracks) { const p = t.isrc.slice(0, 2).toUpperCase(); if (p) cc.set(p, (cc.get(p) || 0) + 1); }
+    bars($('countries'), [...cc.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map((p) => [names[p[0]] || p[0], p[1]]), tracks.length);
+    const singles = albums.filter((a) => a.tracks.length === 1 && cleanTrack(a.tracks[0].track).toLowerCase() === cleanAlbum(a.album).toLowerCase()).length;
+    const remixes = tracks.filter((t) => /remix|mix\)|edit|flip|bootleg|vip/i.test(t.track)).length;
+    const oneTrackArtists = [...perArtist.values()].filter((v) => v === 1).length;
+    bars($('misc'), [['Синглы (трек = альбом)', singles], ['Альбомы и EP', albums.length - singles], ['Ремиксы, эдиты, флипы', remixes], ['Исполнители с 1 лайком', oneTrackArtists], ['Исполнители с 10+ лайками', [...perArtist.values()].filter((v) => v >= 10).length]]);
+  }
+
+  // ---------- boot ----------
+  const saved = store.get(LS_LIB);
+  buildLibrary(saved && saved.length ? saved : (window.SPOTIFY_LIBRARY || []));
+  window.addEventListener('beforeunload', (e) => { if (running) { e.preventDefault(); e.returnValue = ''; } });
+})();
+</script>
+</body>
+</html>
