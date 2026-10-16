@@ -59,7 +59,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     leave from shared addresses, so a 429 is retried a few times with a pause. */
 export async function discogsFetch(env, method, url, opts = {}) {
   let r;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  const attempts = opts.attempts || 4;
+  for (let attempt = 0; attempt < attempts; attempt++) {
     if (attempt) await sleep(Math.min(6000, 1500 * attempt));
     const auth = await oauthHeader(env, method, url, opts);
     r = await fetch(url, { method, headers: { Authorization: auth, 'User-Agent': UA, Accept: opts.accept || 'application/json' } });

@@ -34,7 +34,8 @@ Discogs allows 60 searches a minute per account, so a library of ~3000 albums ta
 | `index.html` | markup and styles |
 | `app.js` | state, Discogs check loop, list, export, statistics, hosted-mode client |
 | `importers.js` | library parsers (also usable in Node for tests) |
-| `functions/auth/*` | Discogs OAuth 1.0a login, callback, logout |
+| `functions/api/oauth.js` | signs each step of the Discogs OAuth handshake; the browser sends them from its own address |
+| `functions/auth/*` | server-side login fallback, OAuth callback, logout |
 | `functions/api/me.js` | who is logged in, which features the deployment has |
 | `functions/api/sign.js` | signs a Discogs search with the user's OAuth token; the browser then calls Discogs itself |
 | `functions/api/search.js` | server-side search proxy, used only when the browser cannot call Discogs directly |

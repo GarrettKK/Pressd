@@ -109,13 +109,74 @@
       const me = await r.json();
       auth.hosted = true; auth.username = me.username || null; auth.loginAvailable = !!me.loginAvailable; auth.sharedCache = !!me.sharedCache;
     } catch (e) { /* static hosting without functions */ }
-    const m = /[?&]login=([a-z]+)/.exec(location.search);
+    const qs = new URLSearchParams(location.search);
+    const m = qs.get('login');
     if (m) {
-      const msg = { ok: 'Logged in to Discogs', denied: 'Discogs login was cancelled', expired: 'The login link expired, please try again', error: 'Discogs login failed, please try again', unconfigured: 'Login is not set up on this deployment' }[m[1]];
+      const msg = { ok: 'Logged in to Discogs', denied: 'Discogs login was cancelled', expired: 'The login link expired, please try again', error: 'Discogs login failed, please try again', unconfigured: 'Login is not set up on this deployment' }[m];
       if (msg) toast(msg);
-      try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) {}
     }
+    if (qs.has('login') || qs.has('oauth_token') || qs.has('oauth_access')) { try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) {} }
     renderAuth();
+    if (auth.hosted && qs.get('oauth_token') && qs.get('oauth_verifier')) await finishLogin({ token: qs.get('oauth_token'), verifier: qs.get('oauth_verifier') });
+    else if (auth.hosted && qs.get('oauth_access') && qs.get('oauth_access_secret')) await finishLogin({ access: qs.get('oauth_access'), secret: qs.get('oauth_access_secret') });
+  }
+
+  // --- Browser-driven OAuth handshake: the server signs, this browser talks to Discogs (its own IP, its own rate limit).
+  async function oauthStep(body) {
+    const r = await api('/api/oauth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || `Server error ${r.status}`);
+    return data;
+  }
+  // Send a signed request from the browser: OAuth in the query string first, then in a header. A fresh
+  // signature is fetched for each attempt. Throws a TypeError when the browser cannot reach Discogs at all.
+  async function direct(signer, method) {
+    for (const mode of ['query', 'header']) {
+      const s = await signer();
+      try {
+        const r = mode === 'query'
+          ? await fetch(s.url, { method, headers: { Accept: 'application/json' } })
+          : await fetch(s.plainUrl, { method, headers: { Accept: 'application/json', Authorization: s.header } });
+        if (r.status !== 401 && r.status !== 403) return r;
+      } catch (e) { if (mode === 'header') throw e; }
+    }
+    throw new Error('Discogs rejected the signed request. Please try again.');
+  }
+  const formBody = async (r) => Object.fromEntries(new URLSearchParams(await r.text()));
+  const rateMsg = 'Discogs is rate-limiting your address right now. Wait a minute and try again; a VPN exit shared by many people often causes this.';
+
+  async function startLogin() {
+    const btn = $('login'); btn.disabled = true; btn.textContent = 'Connecting to Discogs…';
+    try {
+      const r = await direct(() => oauthStep({ step: 'start' }), 'GET');
+      if (!r.ok) throw new Error(r.status === 429 ? rateMsg : `Discogs did not issue a login token (HTTP ${r.status}).`);
+      const t = await formBody(r);
+      if (!t.oauth_token || !t.oauth_token_secret) throw new Error('Unexpected answer from Discogs. Please try again.');
+      const st = await oauthStep({ step: 'store', oauth_token: t.oauth_token, oauth_token_secret: t.oauth_token_secret });
+      location.href = st.authorize;
+    } catch (e) {
+      if (e instanceof TypeError) { location.href = '/auth/login'; return; }   // browser cannot reach Discogs directly: let the server try
+      toast(e.message); btn.disabled = false; btn.textContent = 'Log in with Discogs';
+    }
+  }
+  async function finishLogin(p) {
+    toast('Finishing the Discogs login…');
+    try {
+      let access = p.access, secret = p.secret;
+      if (!access) {
+        const r = await direct(() => oauthStep({ step: 'exchange', oauth_token: p.token, oauth_verifier: p.verifier }), 'POST');
+        if (!r.ok) throw new Error(r.status === 429 ? rateMsg : `Discogs refused to complete the login (HTTP ${r.status}).`);
+        const a = await formBody(r);
+        if (!a.oauth_token || !a.oauth_token_secret) throw new Error('Unexpected answer from Discogs. Please try again.');
+        access = a.oauth_token; secret = a.oauth_token_secret;
+      }
+      let username = '';
+      try { const ir = await direct(() => oauthStep({ step: 'identity', token: access, secret }), 'GET'); if (ir.ok) username = String((await ir.json()).username || ''); } catch (e) { /* the server will try */ }
+      const fin = await oauthStep({ step: 'finish', token: access, secret, username });
+      auth.username = fin.username; renderAuth(); toast('Logged in to Discogs');
+    } catch (e) {
+      toast(e instanceof TypeError ? 'Could not reach Discogs from this browser. Please try again.' : e.message);
+    }
   }
   function renderAuth() {
     const canLogin = auth.hosted && auth.loginAvailable;
@@ -126,7 +187,7 @@
     if (auth.username) $('auth-user').textContent = auth.username;
     $('shared-note').textContent = auth.sharedCache ? 'Albums you resolve are added to the shared cache.' : '';
   }
-  $('login').addEventListener('click', () => { location.href = '/auth/login'; });
+  $('login').addEventListener('click', startLogin);
   $('logout').addEventListener('click', async () => {
     try { await api('/auth/logout', { method: 'POST' }); } catch (e) {}
     auth.username = null; renderAuth(); toast('Logged out');
