@@ -1,79 +1,109 @@
+<div align="center">
+
 # SpotiVinyl
 
-Find out which of your liked tracks exist on vinyl. Import a library export from Spotify, Tidal, Apple Music, Deezer, YouTube Music or any CSV, then check it against [Discogs](https://www.discogs.com), album by album.
+### Which of your liked tracks exist on vinyl?
 
-The page itself is static and runs entirely in the browser. An optional set of Cloudflare Pages Functions adds **Log in with Discogs** and a **shared cache** of results, so an album anyone has already resolved is not looked up again.
+Import your library from Spotify, Tidal, Apple Music, Deezer, YouTube Music or any CSV.<br>
+SpotiVinyl checks every album against Discogs and tells you what you could own on wax.
 
-## Using it
+**[Open the app → spotivinyl.pages.dev](https://spotivinyl.pages.dev)**
 
-1. Open the site (or `index.html` locally; no server needed).
-2. Drop in a library export. Supported inputs:
-   - **TuneMyMusic** and **Soundiiz** CSV exports (covers Spotify, Tidal, Apple Music, Deezer, Amazon Music, YouTube Music and more)
-   - **Exportify** CSV (Spotify, includes ISRC codes)
-   - **Spotify privacy export** `YourLibrary.json`
-   - **Google Takeout** `music-library-songs.csv` (YouTube Music)
-   - **Apple Music / iTunes** `Library.xml`
-   - any CSV/TSV with Title, Artist and Album columns (names are detected automatically), a JSON array of tracks, or a text file with one `Artist - Title` per line
-3. Either **Log in with Discogs** (on a deployment with Functions) or paste a free personal access token from <https://www.discogs.com/settings/developers>, then press **Start checking**.
+[![License: MIT](https://img.shields.io/badge/license-MIT-2a4d8f.svg)](LICENSE)
+[![Hosted on Cloudflare Pages](https://img.shields.io/badge/hosted%20on-Cloudflare%20Pages-c81e3c.svg)](https://pages.cloudflare.com)
+[![Data provided by Discogs](https://img.shields.io/badge/data-Discogs-16181d.svg)](https://www.discogs.com/developers)
 
-Discogs allows 60 searches a minute per account, so a library of ~3000 albums takes about an hour the first time. Results are saved after every album; the tab can be closed and the check resumed later. Each match links to its Discogs release and can be dismissed with **Not a match** or searched again with **Recheck**.
+<img src="docs/library.png" alt="A library loaded in SpotiVinyl: summary tiles, the check toolbar and album cards" width="860">
+
+</div>
+
+## What it does
+
+1. **Drop in a library export.** The file is parsed in your browser and never uploaded.
+2. **Log in with Discogs** (or paste a personal token).
+3. **Press *Start checking*.** Each album or single is looked up on Discogs with a vinyl filter, about one per second. Every hit links to the Discogs release with year, country and format, and can be dismissed if it is the wrong record.
+4. **Keep the list.** Filter by *On vinyl*, copy the list or download it as CSV, and come back any time: results are saved as they arrive.
+
+A **shared cache** makes it faster for everyone. An album anyone has already resolved is not looked up again, so popular records resolve instantly and only your long tail hits Discogs.
+
+## Supported exports
+
+| Service | How to get the file |
+|---|---|
+| Spotify | [Exportify](https://exportify.net) (Liked Songs → Export), [TuneMyMusic](https://www.tunemymusic.com) or the privacy export `YourLibrary.json` |
+| Tidal, Apple Music, Deezer, Amazon Music | [TuneMyMusic](https://www.tunemymusic.com) or [Soundiiz](https://soundiiz.com), export favourites to a CSV file |
+| Apple Music / iTunes on a Mac | File → Library → Export Library (`Library.xml`) |
+| YouTube Music | [Google Takeout](https://takeout.google.com) → `music-library-songs.csv`, or TuneMyMusic |
+| Anything else | Any CSV/TSV with Title, Artist and Album columns, a JSON array of tracks, or a text file with one `Artist - Title` per line |
+
+Column names are detected automatically. Several files can be combined with *Add another file*.
+
+<div align="center"><img src="docs/import.png" alt="The import screen with the drop zone and export instructions" width="860"></div>
+
+## Privacy
+
+- Your library and your results live in your browser's local storage. Nothing about your listening history is stored on the server.
+- Logging in with Discogs gives the server a token for your Discogs account, kept in a database only so it can sign your searches. It is never sent anywhere else. Log out to delete it.
+- The shared cache stores one line per album: artist, album, whether a vinyl pressing exists and which Discogs release matched. It does not record who likes what.
+- Searches go from your browser straight to Discogs. Discogs rate-limits by IP address, which is exactly why: everyone gets their own 60 requests a minute.
 
 ## How matching works
 
-- Tracks are grouped into albums by artist and album name (after stripping things like `(feat. …)`, `- Single`, `- Remastered`).
-- One Discogs search per album with `format=Vinyl`. If nothing comes back, a second search uses the first track title.
-- A result counts only when the artist part of the Discogs title matches the artist in the library. Among matching results the one whose title equals the album name wins; a match found through a track search, or without an exact title match, is labelled *please verify*.
-- Discogs throttles by source IP (60 requests a minute). Requests from Cloudflare leave from shared addresses, so when logged in the Functions only *sign* each search and the browser sends it to Discogs from the user's own address. OAuth parameters go in the query string first, then in an Authorization header, and the server-side proxy is the last resort.
-- With the shared cache, unchecked albums are first looked up in the cache. Verdicts a logged-in user finds are written back. A *vinyl* verdict is never overwritten by a *none* one, and a *none* verdict expires after 180 days so new pressings get picked up. Manual dismissals stay local.
-- ISRC codes, when present, drive the statistics panel (release years and registrant prefixes).
+- Tracks are grouped into albums by artist and album name, after stripping suffixes such as `(feat. …)`, `- Single`, `- Remastered`.
+- One Discogs search per album with `format=Vinyl`. If it comes back empty, a second search uses the first track title.
+- A result counts only when the artist part of the Discogs title matches the library artist. Among matching results the exact album title wins. A match found through a track search, or without an exact title match, is labelled *please verify*.
+- A *vinyl* verdict in the shared cache is never overwritten by a *none*; a *none* expires after 180 days so new pressings get picked up. Manual dismissals stay local.
+- ISRC codes, when the export has them, feed the statistics panel (release years and registrant prefixes).
 
-## Files
+## Self-hosting
+
+The page itself is static and runs from any web server or a local folder. In that mode users paste their own Discogs token and there is no shared cache.
+
+The full experience (login and shared cache) uses Cloudflare Pages Functions and a D1 database. Everything fits in the free tiers.
+
+1. **Pages project.** Create a Pages project from this repository: build command empty, output directory `/`. The `functions/` directory is picked up automatically.
+2. **Discogs application.** At <https://www.discogs.com/settings/developers> click *Create an Application* and set the callback URL to `https://<your-domain>/auth/callback`. Copy the consumer key and secret.
+3. **D1 database.** *Storage & Databases → D1 → Create*. Any name. Tables are created on first use.
+4. **Bindings.** In the Pages project, *Settings → Bindings*: add the D1 binding with variable name `DB`. Under *Variables and Secrets* add `DISCOGS_CONSUMER_KEY` and `DISCOGS_CONSUMER_SECRET` as secrets.
+5. Redeploy. `GET /api/me` should answer `{"username":null,"loginAvailable":true,"sharedCache":true}`.
+
+Without the D1 binding the page falls back to token mode. Without the Discogs keys login is hidden and the shared cache is read-only.
+
+## Project layout
 
 | Path | Purpose |
 |---|---|
 | `index.html` | markup and styles |
-| `app.js` | state, Discogs check loop, list, export, statistics, hosted-mode client |
+| `app.js` | library state, check loop, list, export, statistics, hosted-mode client |
 | `importers.js` | library parsers (also usable in Node for tests) |
-| `functions/api/oauth.js` | signs each step of the Discogs OAuth handshake; the browser sends them from its own address |
-| `functions/auth/*` | server-side login fallback, OAuth callback, logout |
-| `functions/api/me.js` | who is logged in, which features the deployment has |
-| `functions/api/sign.js` | signs a Discogs search with the user's OAuth token; the browser then calls Discogs itself |
-| `functions/api/search.js` | server-side search proxy, used only when the browser cannot call Discogs directly |
+| `functions/api/oauth.js` | signs each step of the Discogs OAuth handshake; the browser sends them |
+| `functions/api/sign.js` | signs a Discogs search for the logged-in user |
 | `functions/api/cache.js` | shared verdict cache (read: anyone, write: logged-in users) |
+| `functions/api/me.js` | who is logged in, which features the deployment has |
+| `functions/api/search.js` | server-side search proxy, last-resort fallback |
+| `functions/auth/*` | server-side login fallback, OAuth callback, logout |
 | `functions/lib/*` | OAuth signing, D1 access, sessions |
-| `_headers` | response headers for Cloudflare Pages |
-
-## Deploying
-
-### Static only
-
-The page works from any static host or from a local folder. Users paste their own Discogs token. Nothing else to configure.
-
-### Cloudflare Pages with login and shared cache
-
-1. **Pages project.** Create a Pages project from this repository: build command empty, output directory `/`. The `functions/` directory is picked up automatically.
-2. **Discogs application.** At <https://www.discogs.com/settings/developers> click *Create an Application*. Set the callback URL to `https://<your-domain>/auth/callback` (for example `https://spotivinyl.pages.dev/auth/callback`). Copy the consumer key and secret.
-3. **D1 database.** In the Cloudflare dashboard go to *Storage & Databases → D1*, create a database (any name, for example `spotivinyl`). Tables are created automatically on first use.
-4. **Bindings.** In the Pages project open *Settings → Bindings* (or *Functions* on older dashboards) and add:
-   - D1 database binding, variable name `DB`, pointing to the database from step 3;
-   - environment variables `DISCOGS_CONSUMER_KEY` and `DISCOGS_CONSUMER_SECRET` (mark them as secrets).
-   Add them for Production and, if you use it, Preview.
-5. Redeploy (push a commit or use *Retry deployment*). `GET /api/me` should now answer `{"username":null,"loginAvailable":true,"sharedCache":true}`.
-
-Without the D1 binding the API reports `sharedCache: false` and the page falls back to token mode. Without the Discogs keys login is hidden and the shared cache still works read-only.
 
 ### Local development
 
 ```bash
 npm i -D wrangler
-npx wrangler pages dev . --d1 DB --binding DISCOGS_CONSUMER_KEY=... DISCOGS_CONSUMER_SECRET=...
+npx wrangler pages dev . --d1 DB --binding DISCOGS_CONSUMER_KEY=… DISCOGS_CONSUMER_SECRET=…
 ```
 
-`DISCOGS_API` and `DISCOGS_AUTHORIZE` can be overridden to point the functions at a stand-in server for tests.
+`DISCOGS_API` and `DISCOGS_AUTHORIZE` can be overridden to point the functions at a stand-in server for tests. The importers run in Node:
+
+```js
+require('./importers.js');
+Importers.importLibrary(require('fs').readFileSync('export.csv', 'utf8'), 'export.csv');
+```
 
 ## Roadmap
 
-- Add found albums to the user's Discogs wantlist; show marketplace price ranges.
-- Per-user history across devices (the login already identifies the user).
+- Add found albums to your Discogs wantlist in one click.
+- Marketplace price range next to each match.
+- Your results across devices (the login already identifies you).
 
-Data provided by Discogs. The Discogs API is free for non-commercial use.
+## Credits
+
+Data provided by [Discogs](https://www.discogs.com). SpotiVinyl is not affiliated with Discogs, Spotify or any other music service. Released under the [MIT License](LICENSE).
