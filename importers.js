@@ -1,4 +1,4 @@
-/* SpotiVinyl importers: turn a library export from any music service into one list of tracks.
+/* Pressd importers: turn a library export from any music service into one list of tracks.
    Output track: { title, artist, album, isrc, id, service } — id is a Spotify track id when known.
    Works in the browser and in Node (for tests). */
 (function (root) {

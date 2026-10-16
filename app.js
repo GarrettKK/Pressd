@@ -1,4 +1,4 @@
-/* SpotiVinyl app: library state, Discogs check loop, list rendering, export and statistics. */
+/* Pressd app: library state, Discogs check loop, list rendering, export and statistics. */
 (function () {
   'use strict';
   const $ = (id) => document.getElementById(id);
@@ -495,7 +495,7 @@
   $('download').addEventListener('click', () => {
     const csv = [['Artist', 'Album', 'Discogs title', 'Year', 'Country', 'Format', 'Discogs URL', 'Tracks']].concat(exportRows())
       .map((r) => r.map((c) => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"').join(',')).join('\n');
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })); a.download = 'spotivinyl.csv'; document.body.appendChild(a); a.click(); a.remove();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })); a.download = 'pressd-vinyl.csv'; document.body.appendChild(a); a.click(); a.remove();
   });
 
   // ---------- reset / clear ----------

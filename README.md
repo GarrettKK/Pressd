@@ -1,11 +1,11 @@
 <div align="center">
 
-# SpotiVinyl
+# Pressd
 
 ### Which of your liked tracks exist on vinyl?
 
 Import your library from Spotify, Tidal, Apple Music, Deezer, YouTube Music or any CSV.<br>
-SpotiVinyl checks every album against Discogs and tells you what you could own on wax.
+Pressd checks every album against Discogs and tells you what you could own on wax.
 
 **[Open the app → spotivinyl.pages.dev](https://spotivinyl.pages.dev)**
 
@@ -13,7 +13,7 @@ SpotiVinyl checks every album against Discogs and tells you what you could own o
 [![Hosted on Cloudflare Pages](https://img.shields.io/badge/hosted%20on-Cloudflare%20Pages-c81e3c.svg)](https://pages.cloudflare.com)
 [![Data provided by Discogs](https://img.shields.io/badge/data-Discogs-16181d.svg)](https://www.discogs.com/developers)
 
-<img src="docs/library.png" alt="A library loaded in SpotiVinyl: summary tiles, the check toolbar and album cards" width="860">
+<img src="docs/library.png" alt="A library loaded in Pressd: summary tiles, the check toolbar and album cards" width="860">
 
 </div>
 
@@ -106,4 +106,4 @@ Importers.importLibrary(require('fs').readFileSync('export.csv', 'utf8'), 'expor
 
 ## Credits
 
-Data provided by [Discogs](https://www.discogs.com). SpotiVinyl is not affiliated with Discogs, Spotify or any other music service. Released under the [MIT License](LICENSE).
+Data provided by [Discogs](https://www.discogs.com). Pressd is not affiliated with Discogs, Spotify or any other music service. Released under the [MIT License](LICENSE).

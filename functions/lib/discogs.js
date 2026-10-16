@@ -1,5 +1,5 @@
 /* Discogs OAuth 1.0a (HMAC-SHA1) helpers for the Pages Functions. */
-export const UA = 'SpotiVinyl/1.0 +https://github.com/GarrettKK/SpotiVinyl';
+export const UA = 'Pressd/1.0 +https://github.com/GarrettKK/Pressd';
 
 export const apiBase = (env) => (env.DISCOGS_API || 'https://api.discogs.com').replace(/\/$/, '');
 export const authorizeUrl = (env) => (env.DISCOGS_AUTHORIZE || 'https://discogs.com/oauth/authorize');
