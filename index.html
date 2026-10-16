@@ -71,6 +71,8 @@ header.top p { margin: 6px 0 0; color: var(--fg-2); max-width: 62ch; }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .setup { display: grid; gap: 12px; }
+.setup summary { cursor: pointer; }
+.setup details[open] summary { margin-bottom: 8px; }
 .setup label { font-weight: 600; font-size: 13px; color: var(--fg-2); text-transform: uppercase; letter-spacing: .04em; }
 input[type=password], input[type=search], input[type=text], select {
   background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0;
@@ -235,13 +237,25 @@ footer { margin-top: 40px; font-size: 13px; color: var(--fg-3); display: flex; f
 
 <!-- App -->
 <div id="app" hidden>
-<section class="panel setup" aria-labelledby="setup-h">
-  <div class="row">
-    <label for="token" id="setup-h">Discogs token</label>
-    <input id="token" type="password" autocomplete="off" placeholder="personal access token" spellcheck="false">
-    <button class="btn" id="save-token" type="button">Save</button>
+<section class="panel setup" id="setup">
+  <div class="row" id="auth-out" hidden>
+    <button class="btn primary" id="login" type="button">Log in with Discogs</button>
+    <span class="hint" style="flex:1 1 260px">Searches run under your own Discogs account, 60 a minute. Albums you resolve go into the shared cache, and albums someone has already resolved skip the lookup.</span>
   </div>
-  <p class="hint">Free from <a href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">discogs.com/settings/developers</a> → “Generate new token”. It is stored only in this browser and sent only to Discogs. Discogs allows 60 searches a minute, so a few thousand albums take about an hour. You can close the tab and continue later; results are saved as they come in.</p>
+  <div class="row" id="auth-in" hidden>
+    <span>Logged in to Discogs as <strong id="auth-user"></strong>.</span>
+    <span class="hint" id="shared-note"></span>
+    <button class="btn small" id="logout" type="button">Log out</button>
+  </div>
+  <details id="token-details" open>
+    <summary class="hint" id="token-summary" hidden>Prefer a personal token instead?</summary>
+    <div class="row" id="token-row">
+      <label for="token" id="setup-h">Discogs token</label>
+      <input id="token" type="password" autocomplete="off" placeholder="personal access token" spellcheck="false">
+      <button class="btn" id="save-token" type="button">Save</button>
+    </div>
+    <p class="hint">Free from <a href="https://www.discogs.com/settings/developers" target="_blank" rel="noopener">discogs.com/settings/developers</a> → “Generate new token”. It is stored only in this browser and sent only to Discogs. Discogs allows 60 searches a minute, so a few thousand albums take about an hour. You can close the tab and continue later; results are saved as they come in.</p>
+  </details>
 </section>
 
 <section class="tiles" aria-label="Summary">

@@ -60,6 +60,7 @@
     $('lib-source').textContent = libMeta.source || 'your export';
     if (tracks.length) renderStats();
     render();
+    if (tracks.length && auth.sharedCache) pullShared();
   }
 
   const toRows = (list) => list.map((t) => [t.title, t.artist, t.album, t.isrc, t.id]);
@@ -96,6 +97,66 @@
   ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
   drop.addEventListener('drop', (e) => { const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f) loadFile(f, 'replace'); });
 
+  // ---------- hosted mode: login and shared cache (Pages Functions under /api and /auth) ----------
+  const auth = { hosted: false, username: null, loginAvailable: false, sharedCache: false };
+  const api = (path, opts) => fetch(path, { credentials: 'same-origin', ...opts });
+
+  async function initAuth() {
+    if (!/^https?:$/.test(location.protocol)) return;
+    try {
+      const r = await api('/api/me');
+      if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) return;
+      const me = await r.json();
+      auth.hosted = true; auth.username = me.username || null; auth.loginAvailable = !!me.loginAvailable; auth.sharedCache = !!me.sharedCache;
+    } catch (e) { /* static hosting without functions */ }
+    const m = /[?&]login=([a-z]+)/.exec(location.search);
+    if (m) {
+      const msg = { ok: 'Logged in to Discogs', denied: 'Discogs login was cancelled', expired: 'The login link expired, please try again', error: 'Discogs login failed, please try again', unconfigured: 'Login is not set up on this deployment' }[m[1]];
+      if (msg) toast(msg);
+      try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) {}
+    }
+    renderAuth();
+  }
+  function renderAuth() {
+    const canLogin = auth.hosted && auth.loginAvailable;
+    $('auth-out').hidden = !(canLogin && !auth.username);
+    $('auth-in').hidden = !(auth.hosted && auth.username);
+    $('token-summary').hidden = !canLogin;
+    $('token-details').open = !canLogin;
+    if (auth.username) $('auth-user').textContent = auth.username;
+    $('shared-note').textContent = auth.sharedCache ? 'Albums you resolve are added to the shared cache.' : '';
+  }
+  $('login').addEventListener('click', () => { location.href = '/auth/login'; });
+  $('logout').addEventListener('click', async () => {
+    try { await api('/auth/logout', { method: 'POST' }); } catch (e) {}
+    auth.username = null; renderAuth(); toast('Logged out');
+  });
+
+  // Pull verdicts other users already found for albums we have not checked yet.
+  async function pullShared() {
+    if (!auth.sharedCache) return 0;
+    const keys = albums.filter((a) => !results[a.key]).map((a) => a.key);
+    let got = 0;
+    for (let i = 0; i < keys.length; i += 100) {
+      try {
+        const r = await api('/api/cache', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: keys.slice(i, i + 100) }) });
+        if (!r.ok) break;
+        const data = await r.json();
+        for (const k of Object.keys(data)) { if (!results[k]) { results[k] = data[k]; got++; } }
+      } catch (e) { break; }
+    }
+    if (got) { saveResults(); render(); }
+    return got;
+  }
+  // Push our own verdicts to the shared cache, in small batches.
+  let pending = [];
+  function queueShared(key, v) { if (auth.username && !v.manual && !v.shared) { pending.push({ key, v }); if (pending.length >= 10) flushShared(); } }
+  async function flushShared() {
+    if (!pending.length || !auth.username) { pending = []; return; }
+    const items = pending.splice(0, 100);
+    try { await api('/api/cache', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) }); } catch (e) { /* lost batch is only a missed contribution */ }
+  }
+
   // ---------- Discogs ----------
   let running = false, stopFlag = false, lastErr = '';
   const tokenInput = $('token');
@@ -103,16 +164,24 @@
   $('save-token').addEventListener('click', () => { store.set(LS.token, tokenInput.value.trim()); toast('Token saved'); });
 
   async function discogs(params) {
-    const token = tokenInput.value.trim();
-    if (!token) throw new Error('A Discogs token is needed: paste it in the field above.');
-    const u = new URL('https://api.discogs.com/database/search');
-    for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
-    u.searchParams.set('format', 'Vinyl');
-    u.searchParams.set('per_page', '8');
-    u.searchParams.set('token', token);
-    const r = await fetch(u.toString(), { headers: { Accept: 'application/json' } });
+    let r;
+    if (auth.username) {
+      const u = new URL('/api/search', location.href);
+      for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+      r = await api(u.toString());
+      if (r.status === 401) { auth.username = null; renderAuth(); throw new Error('Your Discogs login expired. Log in again to continue.'); }
+    } else {
+      const token = tokenInput.value.trim();
+      if (!token) throw new Error(auth.loginAvailable ? 'Log in with Discogs, or paste a personal token below.' : 'A Discogs token is needed: paste it in the field above.');
+      const u = new URL('https://api.discogs.com/database/search');
+      for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+      u.searchParams.set('format', 'Vinyl');
+      u.searchParams.set('per_page', '8');
+      u.searchParams.set('token', token);
+      r = await fetch(u.toString(), { headers: { Accept: 'application/json' } });
+      if (r.status === 401 || r.status === 403) throw new Error(`Discogs rejected the token (HTTP ${r.status}). Check it on the developer settings page.`);
+    }
     if (r.status === 429) { const e = new Error('rate'); e.rate = true; throw e; }
-    if (r.status === 401 || r.status === 403) throw new Error(`Discogs rejected the token (HTTP ${r.status}). Check it on the developer settings page.`);
     if (!r.ok) throw new Error(`Discogs answered HTTP ${r.status}`);
     return r.json();
   }
@@ -177,6 +246,11 @@
     if (running) { stopFlag = true; return; }
     running = true; stopFlag = false; lastErr = '';
     $('run').textContent = 'Pause';
+    if (auth.sharedCache) {
+      setStatus('Looking up the shared cache…');
+      const got = await pullShared();
+      if (got) toast(`${got} albums resolved from the shared cache`);
+    }
     let backoff = 0;
     const q = queue();
     let done = 0; const t0 = Date.now();
@@ -186,7 +260,7 @@
       a.busy = true; setStatus(`Checking: ${a.artist} — ${a.album}`); renderRow(a);
       try {
         results[a.key] = await checkAlbum(a);
-        saveResults();
+        saveResults(); queueShared(a.key, results[a.key]);
         backoff = 0;
       } catch (e) {
         a.busy = false;
@@ -200,8 +274,16 @@
       await sleep(DELAY_MS);
     }
     running = false; stopFlag = false;
+    flushShared();
     setStatus(lastErr ? 'Stopped.' : (queue().length ? 'Paused.' : 'All albums checked.'));
     updateCounts();
+  }
+  // Check one album right away (the Recheck button).
+  async function checkOne(a) {
+    a.busy = true; renderRow(a);
+    try { results[a.key] = await checkAlbum(a); saveResults(); queueShared(a.key, results[a.key]); flushShared(); }
+    catch (e) { toast(e.rate ? 'Discogs asked us to slow down, try again in a minute' : e.message); }
+    a.busy = false; renderRow(a); updateCounts();
   }
   $('run').addEventListener('click', run);
   function setStatus(t) { $('st-text').textContent = t; $('st-err').textContent = lastErr; }
@@ -270,11 +352,12 @@
       match = `<div class="match"><span>Discogs: <a href="${esc(r.u)}" target="_blank" rel="noopener">${esc(r.t)}</a></span><span class="mono">${esc(meta)}</span>`
         + (r.n > 1 ? `<span class="mono">+${r.n - 1} more pressings</span>` : '')
         + (r.conf === 'medium' ? '<span class="mono">please verify</span>' : '')
+        + (r.shared ? '<span class="mono">shared result</span>' : '')
         + `<button class="btn link small" data-act="dismiss" data-k="${esc(a.key)}" type="button">Not a match</button>`
         + `<button class="btn link small" data-act="recheck" data-k="${esc(a.key)}" type="button">Recheck</button></div>`;
     } else if (r && r.s === 'none') {
       const q = encodeURIComponent(cleanArtist(a.artist) + ' ' + cleanAlbum(a.album));
-      match = `<div class="match"><span class="mono">${r.manual ? 'Dismissed by you.' : 'No vinyl pressing found.'}</span><a href="https://www.discogs.com/search/?q=${q}&format_exact=Vinyl" target="_blank" rel="noopener">Search Discogs by hand</a>`
+      match = `<div class="match"><span class="mono">${r.manual ? 'Dismissed by you.' : r.shared ? 'No vinyl pressing found (shared result).' : 'No vinyl pressing found.'}</span><a href="https://www.discogs.com/search/?q=${q}&format_exact=Vinyl" target="_blank" rel="noopener">Search Discogs by hand</a>`
         + `<button class="btn link small" data-act="recheck" data-k="${esc(a.key)}" type="button">Recheck</button></div>`;
     }
     const named = a.tracks.filter((t) => t.title);
@@ -303,9 +386,10 @@
   $('list').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-act]'); if (!b) return;
     const a = albumByKey.get(b.dataset.k); if (!a) return;
-    if (b.dataset.act === 'dismiss') results[a.key] = { s: 'none', n: 0, manual: true, ts: Date.now() };
-    else delete results[a.key];
-    saveResults(); renderRow(a); updateCounts();
+    if (b.dataset.act === 'dismiss') { results[a.key] = { s: 'none', n: 0, manual: true, ts: Date.now() }; saveResults(); renderRow(a); updateCounts(); return; }
+    delete results[a.key]; saveResults();
+    if (running) { renderRow(a); updateCounts(); return; }
+    checkOne(a);
   });
 
   // ---------- export ----------
@@ -382,13 +466,15 @@
   }
 
   // ---------- boot ----------
-  (function boot() {
+  (async function boot() {
     const saved = store.get(LS.library);
-    if (saved && saved.rows && saved.rows.length) { buildLibrary(saved.rows, saved.meta); return; }
     const old = store.get(OLD.library);
-    if (old && old.length) { buildLibrary(old, { source: 'your earlier import', count: old.length }); return; }
-    if (window.SPOTIFY_LIBRARY && window.SPOTIFY_LIBRARY.length) { buildLibrary(window.SPOTIFY_LIBRARY, { source: 'library.js', count: window.SPOTIFY_LIBRARY.length }); return; }
-    buildLibrary([], { source: '', count: 0 });
+    if (saved && saved.rows && saved.rows.length) buildLibrary(saved.rows, saved.meta);
+    else if (old && old.length) buildLibrary(old, { source: 'your earlier import', count: old.length });
+    else if (window.SPOTIFY_LIBRARY && window.SPOTIFY_LIBRARY.length) buildLibrary(window.SPOTIFY_LIBRARY, { source: 'library.js', count: window.SPOTIFY_LIBRARY.length });
+    else buildLibrary([], { source: '', count: 0 });
+    await initAuth();
+    if (tracks.length) pullShared();
   })();
   window.addEventListener('beforeunload', (e) => { if (running) { e.preventDefault(); e.returnValue = ''; } });
 })();
