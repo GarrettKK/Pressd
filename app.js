@@ -493,6 +493,28 @@
   $('run').addEventListener('click', run);
   function setStatus(t) { $('st-text').textContent = t; $('st-err').textContent = lastErr; }
 
+  // Collapsible check panel: on a phone it would otherwise cover most of the screen while sticky.
+  const panelEl = document.querySelector('.toolbar .panel');
+  const FILTER_NAMES = { all: 'All', vinyl: 'On vinyl', none: 'Not found', wait: 'Unchecked' };
+  function setPanel(collapsed, remember) {
+    panelEl.classList.toggle('collapsed', collapsed);
+    $('panel-toggle').textContent = collapsed ? 'Show controls' : 'Hide controls';
+    $('panel-toggle').setAttribute('aria-expanded', String(!collapsed));
+    if (remember) store.set('spotivinyl.panel', collapsed ? 'collapsed' : 'open');
+    updateMini();
+  }
+  function updateMini() {
+    if (!panelEl.classList.contains('collapsed')) { $('mini-filter').textContent = ''; return; }
+    const n = filtered().length;
+    $('mini-filter').textContent = `${FILTER_NAMES[filter]} ${n}` + (query ? ` · “${query}”` : '');
+  }
+  $('panel-toggle').addEventListener('click', () => setPanel(!panelEl.classList.contains('collapsed'), true));
+  function initPanel() {
+    const pref = store.get('spotivinyl.panel');
+    const narrow = window.matchMedia && window.matchMedia('(max-width: 640px)').matches;
+    setPanel(pref ? pref === 'collapsed' : narrow, false);
+  }
+
   // ---------- counts ----------
   function tally() {
     let vinyl = 0, none = 0, wait = 0, vt = 0, nt = 0;
@@ -596,6 +618,7 @@
     $('more').hidden = list.length <= shown;
     $('empty').hidden = list.length > 0;
     updateCounts();
+    updateMini();
   }
   $('list').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-act]'); if (!b) return;
@@ -689,6 +712,7 @@
 
   // ---------- boot ----------
   (async function boot() {
+    initPanel();
     const saved = store.get(LS.library);
     const old = store.get(OLD.library);
     if (saved && saved.rows && saved.rows.length) buildLibrary(saved.rows, saved.meta);

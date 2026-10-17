@@ -126,6 +126,13 @@ input[type=password] { flex: 1 1 260px; font-family: var(--font-mono); font-size
 .progress .p-bad { background: var(--bad); }
 .status { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; font-size: 13px; color: var(--fg-2); font-variant-numeric: tabular-nums; }
 .status .err { color: var(--bad); font-weight: 600; }
+.status .st-left { flex: 1 1 200px; min-width: 0; }
+.status .mini { color: var(--fg-3); }
+.status .mini:not(:empty)::before { content: "· "; }
+.status .toggle { font-size: 12px; padding: 3px 9px; }
+.panel-body { display: grid; gap: 10px; }
+.toolbar .panel.collapsed .panel-body { display: none; }
+.toolbar .panel.collapsed { padding-block: 10px; }
 .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .controls .spacer { flex: 1; }
 .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -271,7 +278,8 @@ footer { margin-top: 40px; font-size: 13px; color: var(--fg-3); display: flex; f
 <div class="toolbar">
   <div class="panel">
     <div class="progress" aria-hidden="true"><i class="p-good" id="p-good" style="width:0"></i><i class="p-bad" id="p-bad" style="width:0"></i></div>
-    <div class="status"><span id="st-text">Ready to check.</span><span id="st-err" class="err"></span></div>
+    <div class="status"><span class="st-left"><span id="st-text">Ready to check.</span> <span id="st-err" class="err"></span> <span id="mini-filter" class="mini"></span></span><button class="btn small toggle" id="panel-toggle" type="button" aria-expanded="true" aria-controls="panel-body">Hide controls</button></div>
+    <div id="panel-body" class="panel-body">
     <div class="controls">
       <button class="btn primary" id="run" type="button">Start checking</button>
       <select id="order" aria-label="Check order">
@@ -300,6 +308,7 @@ footer { margin-top: 40px; font-size: 13px; color: var(--fg-3); display: flex; f
         <option value="price">Cheapest first</option>
         <option value="library">Library order</option>
       </select>
+    </div>
     </div>
   </div>
 </div>
