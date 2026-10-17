@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pressd promo</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0c0f; color: #f3f4f6; font-family: "IBM Plex Mono", monospace; overflow: hidden; }
+  #stage { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: #0e0f12; display: block; }
+  #hint { position: fixed; left: 12px; bottom: 10px; font-size: 12px; color: #7d8392; }
+  #hint a { color: #ff5c78; }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1080" height="1920"></canvas>
+<div id="hint">Pressd promo, 17 s loop. Click to restart. <a href="../">Back to the app</a></div>
+<script>
+(function () {
+  'use strict';
+  const W = 1080, H = 1920, DUR = 17;
+  const cv = document.getElementById('stage'), ctx = cv.getContext('2d');
+  const C = { bg: '#0e0f12', ink: '#f3f4f6', ink2: '#b3b8c4', ink3: '#7d8392', accent: '#ff3b5c', good: '#5fd58b', bad: '#f4a46b', blue: '#7ea2e6', card: '#1b1d23', card2: '#23262e', line: '#30343e' };
+  const DISPLAY = '"Bricolage Grotesque", "Arial Narrow", sans-serif', MONO = '"IBM Plex Mono", monospace';
+
+  // ---------- easing & timeline helpers ----------
+  const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const E = {
+    outExpo: (x) => x >= 1 ? 1 : 1 - Math.pow(2, -10 * x),
+    outCubic: (x) => 1 - Math.pow(1 - x, 3),
+    inOutCubic: (x) => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2,
+    outBack: (x, s = 1.9) => 1 + (s + 1) * Math.pow(x - 1, 3) + s * Math.pow(x - 1, 2),
+    outElastic: (x) => x === 0 ? 0 : x === 1 ? 1 : Math.pow(2, -10 * x) * Math.sin((x * 10 - 0.75) * (2 * Math.PI / 3)) + 1,
+    inQuad: (x) => x * x
+  };
+  const prog = (t, start, dur, ease) => { const p = clamp((t - start) / dur); return ease ? ease(p) : p; };
+  const fmt = (n) => Math.round(n).toLocaleString('en-US').replace(/,/g, ' ');
+
+  // ---------- drawing primitives ----------
+  function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+  function text(str, x, y, { size = 48, weight = 800, font = DISPLAY, color = C.ink, align = 'left', base = 'alphabetic', spacing = 0, alpha = 1 } = {}) {
+    ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = color; ctx.font = `${weight} ${size}px ${font}`; ctx.textAlign = align; ctx.textBaseline = base;
+    try { ctx.letterSpacing = spacing + 'px'; } catch (e) {}
+    ctx.fillText(str, x, y); ctx.restore();
+  }
+  function fitText(str, maxW, size, weight = 800, font = DISPLAY) {
+    if (measure(str, size, weight, font) <= maxW) return str;
+    let s = str; while (s.length > 1 && measure(s + '…', size, weight, font) > maxW) s = s.slice(0, -1);
+    return s.trimEnd() + '…';
+  }
+  function measure(str, size, weight = 800, font = DISPLAY, spacing = 0) { ctx.save(); ctx.font = `${weight} ${size}px ${font}`; try { ctx.letterSpacing = spacing + 'px'; } catch (e) {} const w = ctx.measureText(str).width; ctx.restore(); return w; }
+
+  function record(cx, cy, r, angle, alpha = 1, labelColor = C.accent) {
+    ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(cx, cy); ctx.rotate(angle);
+    // body
+    const g = ctx.createRadialGradient(-r * .3, -r * .3, r * .1, 0, 0, r);
+    g.addColorStop(0, '#2a2c33'); g.addColorStop(.5, '#111216'); g.addColorStop(1, '#17181d');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+    // grooves
+    ctx.lineWidth = 1.2;
+    for (let i = 0; i < 46; i++) {
+      const rr = lerp(r * .36, r * .97, i / 45);
+      ctx.strokeStyle = `rgba(255,255,255,${0.025 + 0.05 * Math.abs(Math.sin(i * 1.7))})`;
+      ctx.beginPath(); ctx.arc(0, 0, rr, 0, Math.PI * 2); ctx.stroke();
+    }
+    // sheen: two soft wedges that stay still relative to the light
+    ctx.rotate(-angle);
+    for (const a0 of [-0.9, 2.25]) {
+      const sg = ctx.createConicGradient(a0, 0, 0);
+      sg.addColorStop(0, 'rgba(255,255,255,0)'); sg.addColorStop(.06, 'rgba(255,255,255,0.10)'); sg.addColorStop(.12, 'rgba(255,255,255,0)');
+      ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(0, 0, r * .98, 0, Math.PI * 2); ctx.arc(0, 0, r * .36, 0, Math.PI * 2, true); ctx.fill('evenodd');
+    }
+    ctx.rotate(angle);
+    // label
+    ctx.fillStyle = labelColor; ctx.beginPath(); ctx.arc(0, 0, r * .33, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = r * .01; ctx.beginPath(); ctx.arc(0, 0, r * .33, 0, Math.PI * 2); ctx.stroke();
+    text('PRESSD', 0, -r * .02, { size: r * .085, color: '#1b0509', align: 'center', spacing: r * .012 });
+    text('33⅓ RPM · SIDE A', 0, r * .11, { size: r * .036, weight: 500, font: MONO, color: 'rgba(27,5,9,.75)', align: 'center' });
+    ctx.fillStyle = '#0e0f12'; ctx.beginPath(); ctx.arc(0, 0, r * .022, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  function stamp(cx, cy, label, color, p, rot = -0.14) {
+    if (p <= 0) return;
+    const s = lerp(2.6, 1, E.outBack(clamp(p), 2.2));
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot); ctx.scale(s, s); ctx.globalAlpha *= clamp(p * 3);
+    const w = measure(label, 44, 800, DISPLAY, 3) + 56, h = 76;
+    ctx.lineWidth = 6; ctx.strokeStyle = color; rrect(-w / 2, -h / 2, w, h, 14); ctx.stroke();
+    ctx.fillStyle = color; ctx.globalAlpha *= .14; rrect(-w / 2, -h / 2, w, h, 14); ctx.fill(); ctx.globalAlpha /= .14;
+    text(label, 0, 16, { size: 44, color, align: 'center', spacing: 3 });
+    ctx.restore();
+  }
+
+  // ---------- content ----------
+  const TICKER = ['Massive Attack — Teardrop', 'Radiohead — Weird Fishes', 'Aphex Twin — Windowlicker', 'Boards of Canada — Roygbiv', 'Emancipator — Soon It Will Be Cold', 'Celldweller — Switchback', 'M83 — Midnight City', 'Grimes — Genesis', 'Porter Robinson — Shelter', 'Burial — Archangel', 'Four Tet — Two Thousand', 'Jon Hopkins — Open Eye Signal', 'Bonobo — Kerala', 'Tycho — A Walk', 'Caribou — Odessa', 'Floating Points — Silhouettes', 'Kiasmos — Blurred', 'Nils Frahm — Says', 'Moderat — A New Error', 'Röyksopp — Eple', 'Boards of Canada — Dayvan', 'Daft Punk — Veridis Quo', 'Justice — Genesis', 'Underworld — Born Slippy'];
+  const CARDS = [
+    { a: 'Massive Attack', t: 'Mezzanine', ok: true, meta: '1998 · UK · 2×LP', price: 'from $34.00 · 42 for sale', hue: '#3b4a6b' },
+    { a: 'Camellia', t: 'Blackmagik Blazing', ok: false, meta: '', hue: '#5a2a4b' },
+    { a: 'Emancipator', t: 'Soon It Will Be Cold Enough', ok: true, meta: '2016 · US · 2×LP', price: 'from $27.50 · 9 for sale', hue: '#2f5a4a' },
+    { a: 'Aphex Twin', t: 'Windowlicker', ok: true, meta: '1999 · UK · 12"', price: 'from $18.50 · 61 for sale', hue: '#5a4a2a' },
+    { a: 'Porter Robinson', t: 'Shelter', ok: false, meta: '', hue: '#2a3a5a' }
+  ];
+
+  function card(x, y, w, c, { alpha = 1, rot = 0, scale = 1, stampP = 0, priceP = 0, wantP = 0 } = {}) {
+    const h = 200;
+    ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x + w / 2, y + h / 2); ctx.rotate(rot); ctx.scale(scale, scale); ctx.translate(-w / 2, -h / 2);
+    ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 18;
+    ctx.fillStyle = C.card; rrect(0, 0, w, h, 24); ctx.fill(); ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = C.line; ctx.lineWidth = 2; rrect(0, 0, w, h, 24); ctx.stroke();
+    // cover
+    const cg = ctx.createLinearGradient(0, 0, 140, 140); cg.addColorStop(0, c.hue); cg.addColorStop(1, '#111216');
+    ctx.fillStyle = cg; rrect(30, 30, 140, 140, 16); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(100, 100, 44, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.arc(100, 100, 12, 0, Math.PI * 2); ctx.stroke();
+    const chipW = priceP > 0 && c.price ? measure(c.price, 24, 500, MONO) + 60 : 0;
+    text(fitText(c.t, w - 200 - 30 - chipW, 40), 200, 86, { size: 40, color: C.ink });
+    text(c.a, 200, 134, { size: 30, weight: 500, color: C.ink2 });
+    if (c.ok && c.meta) text(c.meta, 200, 174, { size: 22, weight: 500, font: MONO, color: C.ink3 });
+    // price chip
+    if (priceP > 0) {
+      const s = lerp(0.4, 1, E.outBack(clamp(priceP))); ctx.save(); ctx.translate(w - 40, 60); ctx.scale(s, s); ctx.globalAlpha *= clamp(priceP * 2);
+      const pw = measure(c.price, 24, 500, MONO) + 40; ctx.fillStyle = C.card2; rrect(-pw, -26, pw, 52, 26); ctx.fill();
+      text(c.price, -20, 9, { size: 24, weight: 500, font: MONO, color: C.ink, align: 'right' }); ctx.restore();
+    }
+    // want button
+    if (wantP > 0) {
+      const on = wantP > 0.55, s = on ? lerp(1.35, 1, E.outElastic(clamp((wantP - .55) / .45))) : 1;
+      ctx.save(); ctx.translate(w - 40, 140); ctx.scale(s, s); ctx.globalAlpha *= clamp(wantP * 3);
+      const label = on ? '♥ In wantlist' : '♡ Want', pw = measure(label, 28, 800, DISPLAY) + 44;
+      ctx.fillStyle = on ? C.good : 'transparent'; ctx.strokeStyle = on ? C.good : C.accent; ctx.lineWidth = 3; rrect(-pw, -28, pw, 56, 28); ctx.fill(); ctx.stroke();
+      text(label, -22, 10, { size: 28, color: on ? '#0e0f12' : C.accent, align: 'right' }); ctx.restore();
+    }
+    ctx.restore();
+    if (stampP > 0) stamp(x + w - 190, y + h - 40, c.ok ? 'ON VINYL' : 'NOT FOUND', c.ok ? C.good : C.bad, stampP);
+  }
+
+  // ---------- scenes ----------
+  function sceneIntro(t) {
+    // t local 0..3
+    const spin = t * 9 * (1 - E.outCubic(clamp(t / 2.2))) + t * 1.4;
+    const rp = prog(t, 0, 1.1, E.outBack);
+    record(W / 2, 760, 420 * rp, spin, clamp(t * 3));
+    // wordmark slams in letter by letter
+    const word = 'PRESSD', size = 230, sp = 2; const total = measure(word, size, 800, DISPLAY, sp); let x = (W - total) / 2;
+    for (let i = 0; i < word.length; i++) {
+      const p = prog(t, 0.9 + i * 0.09, 0.45, E.outBack), ch = word[i], cw = measure(ch, size, 800, DISPLAY, sp);
+      if (p > 0) {
+        const s = lerp(3.2, 1, p); ctx.save(); ctx.translate(x + cw / 2, 1400); ctx.scale(s, s);
+        const ab = (1 - p) * 14;
+        if (ab > 0.5) { text(ch, -ab, 0, { size, color: 'rgba(255,59,92,.8)', align: 'center', alpha: p }); text(ch, ab, 0, { size, color: 'rgba(126,162,230,.8)', align: 'center', alpha: p }); }
+        text(ch, 0, 0, { size, align: 'center', alpha: p }); ctx.restore();
+      }
+      x += cw;
+    }
+    const sub = prog(t, 1.7, 0.6, E.outCubic);
+    text('YOUR LIKES. ON WAX.', W / 2, lerp(1540, 1510, sub), { size: 46, weight: 500, font: MONO, color: C.accent, align: 'center', spacing: 6, alpha: sub });
+  }
+
+  function sceneCount(t) {
+    // t local 0..3
+    const n = 3217 * prog(t, 0.1, 1.6, E.outExpo);
+    text('I IMPORTED', W / 2, 420, { size: 44, weight: 500, font: MONO, color: C.ink3, align: 'center', spacing: 6, alpha: prog(t, 0, .3) });
+    const s = lerp(1.25, 1, prog(t, 0.1, 1.6, E.outExpo));
+    ctx.save(); ctx.translate(W / 2, 640); ctx.scale(s, s); text(fmt(n), 0, 0, { size: 260, align: 'center', spacing: -8 }); ctx.restore();
+    text('liked tracks', W / 2, 750, { size: 64, weight: 500, color: C.ink2, align: 'center', alpha: prog(t, 0.3, .4) });
+    // ticker: two columns rolling up
+    ctx.save(); rrect(0, 880, W, 760, 0); ctx.clip();
+    const grad = ctx.createLinearGradient(0, 880, 0, 1640); grad.addColorStop(0, 'rgba(14,15,18,1)'); grad.addColorStop(.2, 'rgba(14,15,18,0)'); grad.addColorStop(.8, 'rgba(14,15,18,0)'); grad.addColorStop(1, 'rgba(14,15,18,1)');
+    for (let col = 0; col < 2; col++) {
+      const speed = col ? 260 : 330, off = (t * speed) % 70;
+      for (let i = -1; i < 13; i++) {
+        const idx = (i + Math.floor(t * speed / 70) + col * 7) % TICKER.length;
+        const y = 1640 - (i * 70 - off); if (y < 860 || y > 1680) continue;
+        text(TICKER[(idx + TICKER.length) % TICKER.length], 60 + col * 520, y, { size: 26, weight: 500, font: MONO, color: C.ink2 });
+      }
+    }
+    ctx.fillStyle = grad; ctx.fillRect(0, 880, W, 760); ctx.restore();
+    text('FROM SPOTIFY · TIDAL · APPLE MUSIC · DEEZER', W / 2, 1760, { size: 28, weight: 500, font: MONO, color: C.ink3, align: 'center', spacing: 4, alpha: prog(t, 0.6, .4) });
+    text('one file. no sign-up. nothing uploaded.', W / 2, 1810, { size: 28, weight: 500, font: MONO, color: C.ink3, align: 'center', alpha: prog(t, 0.9, .4) });
+  }
+
+  function sceneCards(t) {
+    // t local 0..4.5
+    text('CHECKED AGAINST DISCOGS', W / 2, 300, { size: 40, weight: 500, font: MONO, color: C.ink3, align: 'center', spacing: 6, alpha: prog(t, 0, .3) });
+    const found = CARDS.slice(0, Math.max(0, Math.floor((t - 0.5) / 0.75) + 1)).filter((c) => c.ok).length;
+    text(String(Math.min(found, 3)), W / 2 - 60, 520, { size: 190, color: C.good, align: 'right' });
+    text('of 5 on vinyl', W / 2 - 30, 505, { size: 50, weight: 500, color: C.ink2 });
+    const cw = 940, x0 = 70;
+    CARDS.forEach((c, i) => {
+      const st = 0.5 + i * 0.75, p = prog(t, st, 0.5, E.outCubic);
+      if (p <= 0) return;
+      const y = 640 + i * 236;
+      card(x0 + lerp(W, 0, p), y, cw, c, { alpha: p, rot: lerp(-0.08, 0, p), stampP: prog(t, st + 0.42, 0.35) });
+    });
+  }
+
+  function scenePrices(t) {
+    // t local 0..3
+    text('WHAT WOULD IT COST?', W / 2, 300, { size: 40, weight: 500, font: MONO, color: C.ink3, align: 'center', spacing: 6, alpha: prog(t, 0, .3) });
+    const okCards = CARDS.filter((c) => c.ok);
+    okCards.forEach((c, i) => {
+      card(70, 420 + i * 240, 940, c, { priceP: prog(t, 0.2 + i * 0.22, 0.5), wantP: i === 2 ? prog(t, 1.6, 0.8) : 0 });
+    });
+    const total = 80 * prog(t, 0.6, 1.2, E.outExpo);
+    const p2 = prog(t, 0.5, .5);
+    text('ALL THREE FROM', W / 2, 1290, { size: 36, weight: 500, font: MONO, color: C.ink3, align: 'center', spacing: 6, alpha: p2 });
+    text('$' + total.toFixed(0), W / 2, 1450, { size: 200, color: C.ink, align: 'center', alpha: p2 });
+    text('lowest marketplace prices, live from Discogs', W / 2, 1520, { size: 28, weight: 500, font: MONO, color: C.ink3, align: 'center', alpha: p2 });
+    const wp = prog(t, 2.0, 0.6, E.outCubic);
+    text('one tap → your Discogs wantlist', W / 2, lerp(1720, 1690, wp), { size: 40, weight: 500, color: C.good, align: 'center', alpha: wp });
+    // burst when the heart fills
+    const b = prog(t, 2.0, 0.9);
+    if (b > 0 && b < 1) {
+      for (let i = 0; i < 18; i++) {
+        const a = i / 18 * Math.PI * 2 + 0.3, d = lerp(20, 170, E.outCubic(b));
+        ctx.save(); ctx.globalAlpha = 1 - b; ctx.fillStyle = i % 3 ? C.good : C.accent; ctx.beginPath(); ctx.arc(930 + Math.cos(a) * d, 1040 + Math.sin(a) * d * .7, lerp(9, 2, b), 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      }
+    }
+  }
+
+  function sceneCta(t) {
+    // t local 0..3.5
+    record(W / 2, 700, 560, t * 1.4 + 2, 0.55 * prog(t, 0, .6));
+    const p = prog(t, 0.2, 0.7, E.outBack);
+    ctx.save(); ctx.translate(W / 2, 1320); ctx.scale(lerp(0.6, 1, p), lerp(0.6, 1, p));
+    text('pressd', 0, 0, { size: 300, align: 'center', spacing: -12, alpha: p }); ctx.restore();
+    text('Find your likes on vinyl.', W / 2, 1420, { size: 56, weight: 500, color: C.ink2, align: 'center', alpha: prog(t, 0.6, .5) });
+    const up = prog(t, 0.9, 0.5, E.outCubic);
+    if (up > 0) {
+      const url = 'spotivinyl.pages.dev', uw = measure(url, 44, 500, MONO) + 80;
+      ctx.save(); ctx.globalAlpha = up; ctx.fillStyle = C.accent; rrect(W / 2 - uw / 2, lerp(1560, 1520, up), uw, 92, 46); ctx.fill();
+      text(url, W / 2, lerp(1620, 1580, up), { size: 44, weight: 500, font: MONO, color: '#1b0509', align: 'center' }); ctx.restore();
+    }
+    text('IMPORT · CHECK · PRICE · WANT', W / 2, 1720, { size: 30, weight: 500, font: MONO, color: C.ink3, align: 'center', spacing: 6, alpha: prog(t, 1.3, .4) });
+    text('free · open source · data provided by Discogs', W / 2, 1790, { size: 24, weight: 500, font: MONO, color: C.ink3, align: 'center', alpha: prog(t, 1.5, .4) });
+  }
+
+  const SCENES = [[0, 3.0, sceneIntro], [3.0, 6.0, sceneCount], [6.0, 10.5, sceneCards], [10.5, 13.5, scenePrices], [13.5, 17.0, sceneCta]];
+  const WIPE = 0.36;
+
+  function draw(t) {
+    t = ((t % DUR) + DUR) % DUR;
+    ctx.save(); ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    // subtle grain-ish vignette
+    const vg = ctx.createRadialGradient(W / 2, H / 2, H * .2, W / 2, H / 2, H * .75); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.55)');
+    // active scene (switch at the wipe's midpoint)
+    let idx = SCENES.findIndex(([s, e]) => t >= s && t < e); if (idx < 0) idx = SCENES.length - 1;
+    const [s, , fn] = SCENES[idx];
+    const sinceCut = t - s, nextCut = (SCENES[idx + 1] || [DUR])[0] - t;
+    fn(sinceCut);
+    ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+    // wipes: a bar of accent sweeping down over the cut, covering the frame at the midpoint
+    for (const [cutT] of SCENES.slice(1)) {
+      const w = (t - (cutT - WIPE / 2)) / WIPE;
+      if (w > 0 && w < 1) {
+        const e = E.inOutCubic(w), top = w < .5 ? 0 : lerp(0, H, (e - .5) * 2), bot = w < .5 ? lerp(0, H, e * 2) : H;
+        ctx.fillStyle = C.accent; ctx.fillRect(0, top, W, bot - top);
+        ctx.fillStyle = C.ink; ctx.fillRect(0, w < .5 ? bot - 14 : top, W, 14);
+      }
+    }
+    void sinceCut; void nextCut;
+    ctx.restore();
+  }
+
+  // ---------- playback & render hooks ----------
+  function fit() { const s = Math.min(innerWidth / W, innerHeight / H); cv.style.width = W * s + 'px'; cv.style.height = H * s + 'px'; }
+  addEventListener('resize', fit); fit();
+  let start = null, raf = null, frozen = false;
+  function loop(now) { if (frozen) return; if (start === null) start = now; draw((now - start) / 1000); raf = requestAnimationFrame(loop); }
+  cv.addEventListener('click', () => { start = null; });
+  window.__seek = (t) => { frozen = true; document.getElementById('hint').hidden = true; if (raf) cancelAnimationFrame(raf); draw(t); };
+  window.__ready = Promise.all([document.fonts.load(`800 100px ${DISPLAY}`), document.fonts.load(`500 40px ${MONO}`)]).catch(() => {}).then(() => { if (!frozen) raf = requestAnimationFrame(loop); return true; });
+})();
+</script>
+</body>
+</html>
